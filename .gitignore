@@ -8,4 +8,7 @@ build
 .vscode
 .env
 .env.*
-!.env.example
+
+media/
+*.vva
+*.pdf
