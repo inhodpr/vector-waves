@@ -64,8 +64,8 @@ describe('PhysicsAnimationEngine', () => {
             pluckOrigin: 0,
             zIndex: 0,
             animations: [
-                { id: 'anim1', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, easing: 'Linear' },
-                { id: 'anim2', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, easing: 'Linear' }
+                { id: 'anim1', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, edgeDamping: 0, easing: 'Linear' },
+                { id: 'anim2', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, edgeDamping: 0, easing: 'Linear' }
             ]
         };
 

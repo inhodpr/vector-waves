@@ -63,11 +63,13 @@ export interface AudioMarker {
     id: string;
     targetTrackId: string;
     timestampMs: number;
+    name?: string; // Optional during creation, will be auto-assigned
 }
 
 export interface AudioState {
     tracks: AudioTrack[];
     markers: AudioMarker[];
+    nextMarkerIndex: number; // For autonaming (M1, M2...)
 }
 
 export interface ExportSettings {
@@ -142,7 +144,9 @@ export interface AppState {
     removeAudioTrack: (id: string) => void;
     addAudioMarker: (marker: AudioMarker) => void;
     updateAudioMarkerTime: (id: string, newTimestampMs: number) => void;
+    updateAudioMarkerName: (id: string, name: string) => void;
     removeAudioMarker: (id: string) => void;
+    migrateAudioMarkers: () => void;
 
     // Animation Actions
     addVibrationAnim: (entityId: string, anim: VibrationAnim) => void;
@@ -174,4 +178,8 @@ export interface AppState {
     // Log Actions
     addLog: (level: 'info' | 'warn' | 'error', message: string) => void;
     clearLogs: () => void;
+
+    // Project Persistence
+    saveProject: () => Promise<boolean>;
+    loadProject: () => Promise<boolean>;
 }

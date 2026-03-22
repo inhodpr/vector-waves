@@ -12,6 +12,7 @@ describe('EditPtsToolHandler Global Selection', () => {
                     type: 'Line',
                     vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
                     style: { strokeColor: 'red', strokeWidth: 2, fillColor: '', globalRadius: 0 },
+                    pluckOrigin: 0,
                     zIndex: 0,
                     animations: []
                 },
@@ -20,6 +21,7 @@ describe('EditPtsToolHandler Global Selection', () => {
                     type: 'Line',
                     vertices: [{ x: 50, y: 50 }, { x: 150, y: 50 }],
                     style: { strokeColor: 'blue', strokeWidth: 2, fillColor: '', globalRadius: 0 },
+                    pluckOrigin: 0,
                     zIndex: 1, // Higher Z
                     animations: []
                 }
@@ -50,11 +52,13 @@ describe('EditPtsToolHandler Global Selection', () => {
             entities: {
                 'line1': {
                     id: 'line1', type: 'Line', vertices: [{ x: 10, y: 10 }],
-                    style: {} as any, zIndex: 0, animations: []
+                    style: { strokeColor: 'red', strokeWidth: 2, fillColor: '', globalRadius: 0 },
+                    pluckOrigin: 0, zIndex: 0, animations: []
                 },
                 'line2': {
                     id: 'line2', type: 'Line', vertices: [{ x: 10, y: 10 }],
-                    style: {} as any, zIndex: 1, animations: []
+                    style: { strokeColor: 'blue', strokeWidth: 2, fillColor: '', globalRadius: 0 },
+                    pluckOrigin: 0, zIndex: 1, animations: []
                 }
             },
             entityIds: ['line1', 'line2']

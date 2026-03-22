@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { LineEntity } from '../store/types';
 import { ProjectSettings } from './ProjectSettings';
+import { TimeMath } from '../utils/timeMath';
 
 interface PropertiesPanelProps { }
 
@@ -13,6 +14,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
 
     const updateEntityStyle = useAppStore(state => state.updateEntityStyle);
     const audioMarkers = useAppStore(state => state.audio.markers);
+    
+    // TL REQUIREMENT: Sorted markers for dropdown stability
+    const sortedMarkers = [...audioMarkers].sort((a, b) => a.timestampMs - b.timestampMs);
+
     const addVibrationAnim = useAppStore(state => state.addVibrationAnim);
     const updateVibrationAnim = useAppStore(state => state.updateVibrationAnim);
     const removeVibrationAnim = useAppStore(state => state.removeVibrationAnim);
@@ -155,8 +160,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
                                         style={{ width: '100%', fontSize: '12px' }}
                                     >
                                         <option value="">Select Marker...</option>
-                                        {audioMarkers.map(m => (
-                                            <option key={m.id} value={m.id}>Marker at {(m.timestampMs / 1000).toFixed(2)}s</option>
+                                        {sortedMarkers.map(m => (
+                                            <option key={m.id} value={m.id}>{m.name || 'M?'} ({TimeMath.formatTime(m.timestampMs)})</option>
                                         ))}
                                     </select>
                                 </div>
@@ -169,8 +174,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
                                         style={{ width: '100%', fontSize: '12px' }}
                                     >
                                         <option value="">Select Marker...</option>
-                                        {audioMarkers.map(m => (
-                                            <option key={m.id} value={m.id}>Marker at {(m.timestampMs / 1000).toFixed(2)}s</option>
+                                        {sortedMarkers.map(m => (
+                                            <option key={m.id} value={m.id}>{m.name || 'M?'} ({TimeMath.formatTime(m.timestampMs)})</option>
                                         ))}
                                     </select>
                                 </div>

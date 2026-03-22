@@ -42,7 +42,23 @@ export const LeftToolbar = () => {
                 style={{ padding: '8px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                 onClick={() => (window as any).dispatchEvent(new CustomEvent('open-export'))}
             >
-                Export
+                Export MP4
+            </button>
+
+            <hr style={{ width: '100%', border: 'none', borderBottom: '1px solid #ccc', margin: '10px 0' }} />
+
+            <button 
+                style={{ padding: '8px', backgroundColor: '#2196F3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => useAppStore.getState().saveProject()}
+            >
+                Save Project
+            </button>
+
+            <button 
+                style={{ padding: '8px', backgroundColor: '#FF9800', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => useAppStore.getState().loadProject()}
+            >
+                Load Project
             </button>
         </div>
     );

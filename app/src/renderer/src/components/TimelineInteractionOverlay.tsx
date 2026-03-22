@@ -1,12 +1,14 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { TimeMath } from '../utils/timeMath';
+import { MarkerLabel } from './MarkerLabel';
 
 interface TimelineInteractionOverlayProps {
     zoomLevel: number;
     viewportOffsetMs: number;
     width: number;
     height: number;
+    topOffsetPx?: number;
     onSeek?: (timeMs: number) => void;
 }
 
@@ -15,6 +17,7 @@ export const TimelineInteractionOverlay: React.FC<TimelineInteractionOverlayProp
     viewportOffsetMs,
     width,
     height,
+    topOffsetPx = 0,
     onSeek
 }) => {
     const markers = useAppStore(state => state.audio.markers);
@@ -98,7 +101,7 @@ export const TimelineInteractionOverlay: React.FC<TimelineInteractionOverlayProp
             onPointerDown={handlePointerDownBackground}
             style={{
                 position: 'absolute',
-                top: 0,
+                top: `${topOffsetPx}px`,
                 left: 0,
                 width,
                 height,
@@ -140,6 +143,12 @@ export const TimelineInteractionOverlay: React.FC<TimelineInteractionOverlayProp
                             backgroundColor: 'inherit',
                             borderRadius: '50%'
                         }} />
+
+                        {/* Named Marker Label */}
+                        <MarkerLabel 
+                            markerId={marker.id} 
+                            name={marker.name || `M?`} 
+                        />
                     </div>
                 );
             })}
