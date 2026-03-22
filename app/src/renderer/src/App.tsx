@@ -27,7 +27,26 @@ function App() {
   useEffect(() => {
     const handleOpenExport = () => setShowExport(true);
     window.addEventListener('open-export', handleOpenExport);
+    
+    // TL REQUIREMENT: Legacy Migration of Markers
+    // We run this once on app mount to catch any markers without names.
+    useAppStore.getState().migrateAudioMarkers();
+
     return () => window.removeEventListener('open-export', handleOpenExport);
+  }, []);
+
+  // Handle project reloading synchronization
+  useEffect(() => {
+    const handleProjectLoaded = async () => {
+      const audioState = useAppStore.getState().audio;
+      for (const track of audioState.tracks) {
+        useAppStore.getState().addLog('info', `Reloading audio track: ${track.name}`);
+        await defaultTimelineManager.reloadTrack(track.path);
+      }
+    };
+
+    window.addEventListener('project-loaded', handleProjectLoaded);
+    return () => window.removeEventListener('project-loaded', handleProjectLoaded);
   }, []);
 
   // Sync engine clock with the active mode
@@ -47,6 +66,7 @@ function App() {
       </div>
       {!liveMode && <TimelinePanel timelineManager={defaultTimelineManager} />}
       <LogPanel />
+      {showExport && <ExportDialog engine={canvasEngineInstance} onClose={() => setShowExport(false)} />}
     </div>
   )
 }

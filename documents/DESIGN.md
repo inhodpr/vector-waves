@@ -65,8 +65,8 @@ The `.vva` project schema uses a normalized, relational JSON structure, avoiding
   "audio": {
     "tracks": [{"id": "trk1", "path": "./local/audio/bgm.mp3"}],
     "markers": [
-      {"id": "mk1", "targetTrackId": "trk1", "timestampMs": 1500},
-      {"id": "mk2", "targetTrackId": "trk1", "timestampMs": 4000}
+      {"id": "mk1", "targetTrackId": "trk1", "timestampMs": 1500, "name": "M1"},
+      {"id": "mk2", "targetTrackId": "trk1", "timestampMs": 4000, "name": "M2"}
     ]
   },
   "entities": {
@@ -194,6 +194,13 @@ export interface EntityStyle {
   globalRadius: number; // For corner smoothing
 }
 
+export interface Marker {
+  id: string;
+  targetTrackId: string;
+  timestampMs: number;
+  name: string;
+}
+
 export interface VibrationAnim {
   id: string;
   startMarkerId: string;
@@ -235,6 +242,10 @@ export interface AppState {
   // Domain Data
   entities: Record<string, CanvasEntity>; // Polymorphic support
   entityIds: string[]; // Maintains Z-Order (index 0 is back, length-1 is front)
+
+  // Markers
+  markers: Record<string, Marker>;
+  markerIds: string[]; // For sorted/ordered access
 
   // Editor UI State
   selectedEntityId: string | null;
@@ -389,6 +400,11 @@ graph TD
     App[App.tsx] --> SidebarLeft[LeftToolbar]
     App --> MainCanvasView[CanvasContainer]
     App --> SidebarRight[PropertiesPanel]
+    App --> Timeline[TimelinePanel]
+    
+    Timeline --> Waveform[WaveformDisplay]
+    Timeline --> MarkerLayer[MarkerOverlay]
+    MarkerLayer --> MarkerLabel[MarkerLabel/Editor]
     
     SidebarLeft --> ToolButton[ToolButtons (Select, Draw, Edit)]
     SidebarLeft --> ActionButton[ActionButtons (Layer Up/Down)]

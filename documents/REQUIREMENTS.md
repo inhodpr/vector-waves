@@ -86,7 +86,7 @@ sequenceDiagram
 | | | `[Toggle]` Live Mode (Mic/System Input) |
 | | | `[Dropdown]` Audio Input Device Selector |
 | | | `[Timeline]` Audio Waveform (`[+]`/`[-]` Zoom Controls) |
-| | | `[Action]` Add Audio Marker |
+| | | `[Action]` Add/Rename Audio Marker |
 
 ### 2.3 Modal Windows
 **Image Cropper**
@@ -138,10 +138,10 @@ sequenceDiagram
 * `[TimelineTrack]` `[Waveform]` `[Scrub/Drag]` `[Updates global time constraint for authoring]`
 * `[Action]` `[Timeline Zoom]` `[Scroll Wheel + Shift OR UI Zoom Buttons]` `[Horizontally stretches/compresses the audio waveform for precision editing]`
 * `[Button]` `[UploadAudio]` `[Click]` `[Load Local MP3 or WAV file; Render waveform visualization]`
-* `[Button/Action]` `[AddMarker]` `[Input]` `[Three ways to add: 1) Double-click waveform. 2) Press 'M' to add at playhead. 3) Right-click waveform context menu to 'Add at Cursor' or 'Add at Playhead'.]`
-* `[Marker]` `[TimeMarker]` `[Drag L/R]` `[Updates marker timestamp. UI enforces a "markers cannot cross" restraint preventing Start/End markers from inverting. Playhead auto-scrolls waveform to stay in view during active playback.]`
-* `[Dropdown]` `[AnimStart]` `[Select Marker]` `[Binds current animation's start trigger to Marker ID]`
-* `[Dropdown]` `[AnimEnd]` `[Select Marker]` `[Binds current animation's end/damping trigger to Marker ID]`
+* `[Button/Action]` `[AddMarker]` `[Input]` `[Three ways to add: 1) Double-click waveform. 2) Press 'M' to add at playhead. 3) Right-click waveform context menu to 'Add at Cursor' or 'Add at Playhead'. New markers are automatically assigned a generic name (M1, M2, M3, etc.) based on creation order.]`
+* `[Marker]` `[TimeMarker]` `[Interaction]` `[Displays a yellow rectangle above the marker line showing its name. Double-clicking the rectangle transforms it into an editable textbox; pressing Enter updates the marker's name. Dragging L/R updates marker timestamp. UI enforces a "markers cannot cross" restraint preventing Start/End markers from inverting. Playhead auto-scrolls waveform to stay in view during active playback.]`
+* `[Dropdown]` `[AnimStart]` `[Select Marker]` `[Binds current animation's start trigger to Marker ID. The list is sorted by time and displayed as "Name (Time)", e.g., "M1 (00:01.500)".]`
+* `[Dropdown]` `[AnimEnd]` `[Select Marker]` `[Binds current animation's end/damping trigger to Marker ID. The list is sorted by time and displayed as "Name (Time)".]`
 * `[LiveAudio]` `[InputSelector]` `[Dropdown]` `[List all system audio input devices; switch active stream on change.]`
 * `[LiveAudio]` `[Monitor]` `[Visualizer]` `[Simple real-time level meter showing incoming signal strength.]`
 

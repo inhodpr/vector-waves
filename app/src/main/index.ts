@@ -81,6 +81,15 @@ app.whenReady().then(() => {
     };
   });
 
+  ipcMain.handle('read-audio-file', async (_, absolutePath) => {
+    if (!fs.existsSync(absolutePath)) return null;
+    const fileBuffer = fs.readFileSync(absolutePath);
+    return {
+      originalPath: absolutePath,
+      buffer: fileBuffer
+    };
+  });
+
   ipcMain.handle('select-image-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],

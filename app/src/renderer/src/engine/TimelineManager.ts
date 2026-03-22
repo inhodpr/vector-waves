@@ -32,6 +32,18 @@ export class TimelineManager {
         });
     }
 
+    /**
+     * Reloads an existing track's buffer into the adapter.
+     * Used after loading a project from a .vva file to re-initialize the audio engine.
+     */
+    public async reloadTrack(path: string) {
+        const result = await (window as any).electron.ipcRenderer.invoke('read-audio-file', path);
+        if (result && result.buffer) {
+            const arrayBuffer = new Uint8Array(result.buffer).buffer;
+            await this.audioAdapter.loadTrackFromBuffer(arrayBuffer);
+        }
+    }
+
     public play() {
         this.audioAdapter.play();
     }

@@ -141,13 +141,13 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timelineManager })
                     });
                 }}
             >
-                <div style={{ position: 'relative', left: `-${scrollOffsetPx}px` }}>
+                <div style={{ position: 'relative', left: `-${scrollOffsetPx}px`, height: '100%', paddingTop: '25px' }}>
                     <WaveformRenderer
                         pcmData={audioAdapter.getPcmData()}
                         zoomLevel={zoomLevel}
                         viewportOffsetMs={0}
                         width={10000} // Large virtual width
-                        height={100}
+                        height={80} // Reduced to leave room for labels
                     />
 
                     {/* Playhead Indicator */}
@@ -165,7 +165,8 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ timelineManager })
                         zoomLevel={zoomLevel}
                         viewportOffsetMs={0}
                         width={10000}
-                        height={100}
+                        height={80} // Matched with waveform
+                        topOffsetPx={25} // New prop for vertical offset
                         onSeek={(timeMs) => timelineManager.seek(timeMs)}
                     />
                 </div>

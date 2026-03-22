@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { AppState, CanvasEntity, VibrationAnim } from './types';
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
     // Project Settings
     canvasWidth: 1080,
     canvasHeight: 1080,
@@ -15,7 +15,8 @@ export const useAppStore = create<AppState>((set) => ({
     // Audio State
     audio: {
         tracks: [],
-        markers: []
+        markers: [],
+        nextMarkerIndex: 1
     },
     liveMode: false,
     audioInputDeviceId: null,
@@ -293,12 +294,40 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
     addAudioMarker: (marker) => set((state) => {
-        // Prevent strictly identical markers at exactly the same time? Not strictly necessary for MVP, but good practice
         if (state.audio.markers.find(m => m.id === marker.id)) return state;
+        
+        // Auto-naming logic
+        const newMarker = { ...marker };
+        let nextIdx = state.audio.nextMarkerIndex;
+        
+        if (!newMarker.name) {
+            newMarker.name = `M${nextIdx}`;
+            nextIdx++;
+        }
+
         return {
             audio: {
                 ...state.audio,
-                markers: [...state.audio.markers, marker] // Ideally, sort by time here, but UI logic can handle it
+                markers: [...state.audio.markers, newMarker],
+                nextMarkerIndex: nextIdx
+            }
+        };
+    }),
+
+    updateAudioMarkerName: (id, name) => set((state) => {
+        const index = state.audio.markers.findIndex(m => m.id === id);
+        if (index === -1) return state;
+
+        // Idempotency: don't update if name is identical
+        if (state.audio.markers[index].name === name) return state;
+
+        const newMarkers = [...state.audio.markers];
+        newMarkers[index] = { ...newMarkers[index], name };
+
+        return {
+            audio: {
+                ...state.audio,
+                markers: newMarkers
             }
         };
     }),
@@ -327,5 +356,95 @@ export const useAppStore = create<AppState>((set) => ({
                 markers: state.audio.markers.filter(m => m.id !== id)
             }
         };
-    })
+    }),
+
+    migrateAudioMarkers: () => set((state) => {
+        let hasChanges = false;
+        let nextIdx = state.audio.nextMarkerIndex;
+
+        const newMarkers = state.audio.markers.map(m => {
+            if (!m.name) {
+                hasChanges = true;
+                const name = `M${nextIdx}`;
+                nextIdx++;
+                return { ...m, name };
+            }
+            return m;
+        });
+
+        if (!hasChanges) return state;
+
+        return {
+            audio: {
+                ...state.audio,
+                markers: newMarkers,
+                nextMarkerIndex: nextIdx
+            }
+        };
+    }),
+
+    saveProject: async () => {
+        const state = get();
+        const projectData = {
+            canvasWidth: state.canvasWidth,
+            canvasHeight: state.canvasHeight,
+            backgroundColor: state.backgroundColor,
+            backgroundImageAssetId: state.backgroundImageAssetId,
+            entities: state.entities,
+            entityIds: state.entityIds,
+            audio: state.audio,
+            assets: state.assets,
+            exportSettings: state.exportSettings
+        };
+        
+        const jsonString = JSON.stringify(projectData, null, 2);
+        const success = await (window as any).electron.ipcRenderer.invoke('save-project', jsonString);
+        
+        if (success) {
+            state.addLog('info', 'Project saved successfully.');
+        }
+        return success;
+    },
+
+    loadProject: async () => {
+        const jsonString = await (window as any).electron.ipcRenderer.invoke('load-project');
+        if (jsonString) {
+            try {
+                const projectData = JSON.parse(jsonString);
+                
+                // DATA REWIRING: JSON.parse turns Uint8Array into plain objects. 
+                // We must restore them so the CanvasEngine/Blob logic works.
+                if (projectData.assets && projectData.assets.images) {
+                    for (const id in projectData.assets.images) {
+                        const asset = projectData.assets.images[id];
+                        if (asset.buffer && !(asset.buffer instanceof Uint8Array)) {
+                            // Convert the plain object {0: 123, 1: 45...} back to Uint8Array
+                            asset.buffer = new Uint8Array(Object.values(asset.buffer));
+                        }
+                    }
+                }
+
+                set({
+                    ...projectData,
+                    selectedEntityId: null,
+                    activeTool: 'Select',
+                    isExporting: false,
+                    exportProgress: 0,
+                    logs: []
+                });
+
+                get().addLog('info', 'Project loaded successfully. Synchronizing engines...');
+                
+                // Notify App.tsx to reload audio buffers
+                window.dispatchEvent(new CustomEvent('project-loaded'));
+                
+                return true;
+            } catch (e) {
+                console.error('Failed to parse project file', e);
+                get().addLog('error', `Failed to load project: ${e instanceof Error ? e.message : String(e)}`);
+                return false;
+            }
+        }
+        return false;
+    }
 }));
