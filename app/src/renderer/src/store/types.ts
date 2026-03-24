@@ -75,6 +75,9 @@ export interface AudioState {
 export interface ExportSettings {
     resolution: '1080p' | '720p';
     fps: number;
+    rangeType: 'whole' | 'range';
+    startTimeMs: number;
+    endTimeMs: number;
 }
 
 export interface AssetData {
@@ -123,6 +126,11 @@ export interface AppState {
     timelineZoomLevel: number;      // Pixels per millisecond
     timelineScrollOffsetPx: number; // Horizontal scroll position
     logs: LogEntry[];
+
+    // Detached Window State
+    isDetachedMode: boolean;
+    detachedActive: boolean;
+    messagePort: MessagePort | null;
 
     // Actions
     updateEntityStyle: (id: string, styleUpdate: Partial<EntityStyle>) => void;
@@ -182,4 +190,10 @@ export interface AppState {
     // Project Persistence
     saveProject: () => Promise<boolean>;
     loadProject: () => Promise<boolean>;
+
+    // Detached Window Actions
+    setDetachedActive: (active: boolean) => void;
+    setMessagePort: (port: MessagePort | null) => void;
+    syncStateToPreview: (patch?: any) => void;
+    applySyncPatch: (patch: any) => void;
 }

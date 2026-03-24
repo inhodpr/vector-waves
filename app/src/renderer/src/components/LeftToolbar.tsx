@@ -60,6 +60,13 @@ export const LeftToolbar = () => {
             >
                 Load Project
             </button>
+
+            <button 
+                style={{ padding: '8px', backgroundColor: '#673AB7', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => (window as any).windowAPI.toggleDetachedPreview()}
+            >
+                Detach Preview
+            </button>
         </div>
     );
 }

@@ -4,7 +4,7 @@ import { CanvasEngine } from './CanvasEngine';
 export class ExportManager {
     constructor(private engine: CanvasEngine) {}
 
-    public async startExport(durationMs: number) {
+    public async startExport(durationMs: number, audioPath?: string, startTimeMs: number = 0) {
         const state = useAppStore.getState();
         const { fps } = state.exportSettings;
         const totalFrames = Math.ceil((durationMs / 1000) * fps);
@@ -17,7 +17,10 @@ export class ExportManager {
             width: state.canvasWidth,
             height: state.canvasHeight,
             fps: fps,
-            totalFrames: totalFrames
+            totalFrames: totalFrames,
+            audioPath: audioPath,
+            startTimeMs: startTimeMs,
+            durationMs: durationMs
         });
 
         if (!success) {
@@ -27,10 +30,10 @@ export class ExportManager {
 
         // 2. Headless Render Loop
         for (let i = 0; i < totalFrames; i++) {
-            const currentMs = i * frameTimeMs;
+            const currentMs = startTimeMs + (i * frameTimeMs);
             
-            // Step the engine
-            this.engine.update(currentMs);
+            // Step the engine (force override any injected audio clock)
+            this.engine.update(currentMs, true);
             this.engine.draw();
 
             // Capture frame from canvas

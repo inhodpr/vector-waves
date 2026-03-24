@@ -33,9 +33,10 @@ export class CanvasEngine {
 
     private lastTickMs: number = 0;
 
-    public update(timestamp: number) {
-        // If we have an injected audio clock, use it to override the raw Ticker timestamp
-        const timeMs = this.timeSource ? this.timeSource.getCurrentTimeMs() : timestamp;
+    public update(timestamp: number, force: boolean = false) {
+        // If we have an injected audio clock, use it to override the raw Ticker timestamp,
+        // UNLESS we are in a forced update (like during Export)
+        const timeMs = (this.timeSource && !force) ? this.timeSource.getCurrentTimeMs() : timestamp;
         this.lastTickMs = timeMs;
     }
 

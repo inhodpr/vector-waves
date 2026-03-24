@@ -1,7 +1,8 @@
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import { AppState, CanvasEntity, VibrationAnim } from './types';
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) => ({
     // Project Settings
     canvasWidth: 1080,
     canvasHeight: 1080,
@@ -24,7 +25,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Export State
     exportSettings: {
         resolution: '1080p',
-        fps: 60
+        fps: 60,
+        rangeType: 'whole',
+        startTimeMs: 0,
+        endTimeMs: 5000 // Default 5s if no audio
     },
     isExporting: false,
     exportProgress: 0,
@@ -41,6 +45,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     timelineZoomLevel: 10,
     timelineScrollOffsetPx: 0,
     logs: [],
+
+    // Detached Window State
+    isDetachedMode: new URLSearchParams(window.location.search).get('mode') === 'preview',
+    detachedActive: false,
+    messagePort: null,
 
     // Actions
     updateEntityStyle: (id, styleUpdate) => set((state) => {
@@ -446,5 +455,46 @@ export const useAppStore = create<AppState>((set, get) => ({
             }
         }
         return false;
+    },
+
+    // Detached Window Actions
+    setDetachedActive: (active) => set({ detachedActive: active }),
+    setMessagePort: (port) => {
+        set({ messagePort: port });
+        if (port) {
+            port.onmessage = (event) => {
+                const { type, payload } = event.data;
+                if (type === 'SYNC_STATE') {
+                    get().applySyncPatch(payload);
+                } else if (type === 'SYNC_TIME') {
+                    // Handled by Ticker/Engine directly to avoid React overhead
+                    window.dispatchEvent(new CustomEvent('sync-time', { detail: payload }));
+                } else if (type === 'DETACHED_PLUCK') {
+                    window.dispatchEvent(new CustomEvent('detached-pluck', { detail: payload }));
+                }
+            };
+        }
+    },
+    syncStateToPreview: (patch) => {
+        const state = get();
+        if (!state.detachedActive || !state.messagePort) return;
+
+        // If no patch provided, send full snapshot (initial sync)
+        const payload = patch || {
+            entities: state.entities,
+            entityIds: state.entityIds,
+            audio: state.audio,
+            assets: state.assets,
+            canvasWidth: state.canvasWidth,
+            canvasHeight: state.canvasHeight,
+            backgroundColor: state.backgroundColor
+        };
+
+        state.messagePort.postMessage({ type: 'SYNC_STATE', payload });
+    },
+    applySyncPatch: (patch) => {
+        // Simple implementation: overwrite state with patch
+        // In a real differential sync, this would use immer's applyPatches
+        set((state) => ({ ...state, ...patch }));
     }
-}));
+})));

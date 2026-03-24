@@ -118,8 +118,8 @@ app.whenReady().then(() => {
   // --- FFmpeg Export Handlers ---
   let ffmpegProcess: any = null;
 
-  ipcMain.handle('start-export', async (_, { width, height, fps, totalFrames }) => {
-    console.log(`Starting export: ${width}x${height} @ ${fps}fps, ${totalFrames} frames`);
+  ipcMain.handle('start-export', async (_, { width, height, fps, totalFrames, audioPath, startTimeMs, durationMs }) => {
+    console.log(`Starting export: ${width}x${height} @ ${fps}fps, ${totalFrames} frames, duration: ${durationMs}ms, offset: ${startTimeMs || 0}ms`);
     
     const { filePath } = await dialog.showSaveDialog({
       title: 'Save Exported Video',
@@ -131,25 +131,47 @@ app.whenReady().then(() => {
 
     const { spawn } = require('child_process');
     
-    // Command: ffmpeg -y -f image2pipe -vcodec mjpeg -i - -vcodec libx264 -pix_fmt yuv420p output.mp4
-    ffmpegProcess = spawn('ffmpeg', [
+    // Command: ffmpeg -y -f image2pipe -vcodec mjpeg -r fps -i - [-i audioPath] -vcodec libx264 -pix_fmt yuv420p -r fps [-c:a aac -map 0:v:0 -map 1:a:0] output.mp4
+    const ffmpegArgs = [
       '-y',
       '-f', 'image2pipe',
       '-vcodec', 'mjpeg',
+      '-s', `${width}x${height}`,
       '-r', fps.toString(),
       '-i', '-',
-      '-vcodec', 'libx264',
+    ];
+
+    if (audioPath) {
+      if (startTimeMs && startTimeMs > 0) {
+        ffmpegArgs.push('-ss', (startTimeMs / 1000).toString());
+      }
+      ffmpegArgs.push('-i', audioPath);
+    }
+
+    ffmpegArgs.push(
+      '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
-      '-r', fps.toString(),
-      filePath
-    ]);
+      '-r', fps.toString()
+    );
+
+    if (durationMs) {
+      ffmpegArgs.push('-t', (durationMs / 1000).toString());
+    }
+
+    if (audioPath) {
+      ffmpegArgs.push('-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0');
+    }
+
+    ffmpegArgs.push(filePath);
+
+    ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
 
     ffmpegProcess.on('error', (err: any) => {
       console.error('FFmpeg error:', err);
     });
 
-    ffmpegProcess.stderr.on('data', () => {
-      // console.log(`FFmpeg output received`);
+    ffmpegProcess.stderr.on('data', (data: Buffer) => {
+      console.log(`FFmpeg: ${data.toString()}`);
     });
 
     return true;
@@ -187,6 +209,61 @@ app.whenReady().then(() => {
         resolve(code === 0);
       });
     });
+  });
+
+  // --- Detached Preview Window Management ---
+  let detachedPreviewWindow: BrowserWindow | null = null;
+
+  ipcMain.on('window:toggle-detached-preview', (event) => {
+    if (detachedPreviewWindow) {
+      detachedPreviewWindow.close();
+      return;
+    }
+
+    const mainWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!mainWindow) return;
+
+    detachedPreviewWindow = new BrowserWindow({
+      width: 1080 / 2, // Default preview size
+      height: 1080 / 2,
+      show: false,
+      autoHideMenuBar: true,
+      title: 'Vector Vibe Preview',
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        sandbox: false
+      }
+    });
+
+    detachedPreviewWindow.on('ready-to-show', () => {
+      detachedPreviewWindow?.show();
+      
+      // Initialize MessagePort communication between windows
+      const { port1, port2 } = new (require('electron').MessageChannelMain)();
+      
+      // Send port1 to Main Window
+      mainWindow.webContents.postMessage('window:setup-port', null, [port1]);
+      
+      // Send port2 to Detached Window
+      detachedPreviewWindow?.webContents.postMessage('window:setup-port', null, [port2]);
+
+      // Notify Main Window that preview is active
+      mainWindow.webContents.send('window:detached-active', true);
+    });
+
+    detachedPreviewWindow.on('closed', () => {
+      detachedPreviewWindow = null;
+      // Notify Main Window that preview is closed
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('window:detached-active', false);
+      }
+    });
+
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      detachedPreviewWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?mode=preview`);
+    } else {
+      detachedPreviewWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: { mode: 'preview' } });
+    }
   });
 
   createWindow()

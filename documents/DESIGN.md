@@ -465,17 +465,18 @@ By testing the Zustand store, Interaction Handlers, and `CanvasEngine` individua
 ## 9. Phase 5 Details: Real-Time Audio (Live Mode)
 
 ### 7.1 Architecture
-The `LiveAudioAdapter` implements `ITimeSource` but instead of a linear track time, it can emit a virtual "playhead" or simply trigger the `CanvasEngine` on every frame with the latest analysis data.
+The `LiveAudioAdapter` implements `ITimeSource` and provides real-time analysis data for the reactive engine.
 
 ```typescript
-export interface IAudioAnalyzer {
-  getAmplitude(band: 'Bass' | 'Mid' | 'Treble' | 'Full'): number;
-  getDeviceList(): Promise<MediaDeviceInfo[]>;
-  setDevice(deviceId: string): Promise<void>;
+export class LiveAudioAdapter implements ITimeSource {
+  public getVolume(): number;
+  public getBandVolume(low: number, high: number): number;
+  public getFrequencyData(): Uint8Array;
 }
 ```
 
 ### 7.2 Trigger Logic
-In "Live Mode", the `PhysicsAnimationEngine` checks each animation's `trigger` settings:
+In "Live Mode", the `LivePanel` component monitors the `LiveAudioAdapter` at ~20fps and manages "Pluck" triggers:
 1.  **Temporal (Default)**: Follows the timeline markers.
-2.  **Reactive**: Checks the `LiveAudioAdapter` current amplitude for the specified `frequencyBand`. If `amplitude > threshold`, it simulates a "Pluck" event at the `pluckOrigin`. 
+2.  **Reactive**: Compares the `LiveAudioAdapter` current amplitude for the specified `frequencyBand` against the `threshold`. If `amplitude > threshold`, it appends a new `ActiveTrigger` (with a 100ms refractory period) to the entity's state. 
+3.  **Superposition**: The `PhysicsAnimationEngine` calculates the combined displacement of all `activeTriggers` currently within their 2000ms lifecycle.

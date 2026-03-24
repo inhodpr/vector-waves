@@ -25,6 +25,10 @@ export class AudioPlaybackAdapter implements ITimeSource {
         this.broadcastTime(0);
     }
 
+    public getDurationMs(): number {
+        return this.audioBuffer ? this.audioBuffer.duration * 1000 : 0;
+    }
+
     public getPcmData(): Float32Array {
         return this.audioBuffer ? this.audioBuffer.getChannelData(0) : new Float32Array(0);
     }
