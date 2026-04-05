@@ -33,22 +33,26 @@ function App() {
 
     // Listen for port setup
     const unsetPort = windowAPI.onSetupPort((port: MessagePort) => {
+      console.log(`[IPC] Received SetupPort event. isDetachedMode: ${isDetachedMode}`);
       useAppStore.getState().setMessagePort(port);
       liveAudioAdapter.setMessagePort(port);
       useAppStore.getState().addLog('info', `MessagePort initialized for ${isDetachedMode ? 'Detached' : 'Main'} window.`);
       
       // If we are the detached window, request initial state
       if (isDetachedMode) {
+        console.log(`[DETACHED] Requesting initial state sync from Main process via port...`);
         port.postMessage({ type: 'REQUEST_INITIAL_SYNC' });
       }
     });
 
     // Listen for active status (Main Window only)
     const unsetActive = windowAPI.onDetachedActive((active: boolean) => {
+      console.log(`[MAIN] Detached Window Active state changed to: ${active}`);
       useAppStore.getState().setDetachedActive(active);
       if (active) {
         // Initial sync when window opens
         setTimeout(() => {
+          console.log(`[MAIN] 500ms startup delay finished. Triggering backup syncStateToPreview.`);
           useAppStore.getState().syncStateToPreview();
         }, 500); // Small delay to ensure port is ready at both ends
       }
@@ -93,7 +97,8 @@ function App() {
         audio: state.audio,
         backgroundColor: state.backgroundColor,
         canvasWidth: state.canvasWidth,
-        canvasHeight: state.canvasHeight
+        canvasHeight: state.canvasHeight,
+        backgroundImageTransform: state.backgroundImageTransform
       }),
       (slice) => {
         const state = useAppStore.getState();

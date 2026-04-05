@@ -21,6 +21,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
     const addVibrationAnim = useAppStore(state => state.addVibrationAnim);
     const updateVibrationAnim = useAppStore(state => state.updateVibrationAnim);
     const removeVibrationAnim = useAppStore(state => state.removeVibrationAnim);
+    const deleteEntity = useAppStore(state => state.deleteEntity);
 
     if (!activeEntity || activeEntity.type !== 'Line') {
         return (
@@ -74,10 +75,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
                             addVibrationAnim(activeEntity.id, {
                                 id: `anim_${Date.now()}`,
                                 startMarkerId: audioMarkers.length > 0 ? audioMarkers[0].id : '',
-                                endMarkerId: audioMarkers.length > 1 ? audioMarkers[1].id : '',
-                                frequency: 5,
-                                amplitude: 20,
+                                frequency: Number((0.9 + Math.random() * 1.0).toFixed(2)),
+                                amplitude: Math.round(8 + Math.random() * 7),
                                 edgeDamping: 20,
+                                durationMs: 1000,
                                 easing: 'Exponential'
                             });
                         }}
@@ -169,16 +170,27 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
                                 <div style={{ marginBottom: '8px' }}>
                                     <label style={{ fontSize: '10px', display: 'block' }}>End Marker</label>
                                     <select
-                                        value={anim.endMarkerId}
-                                        onChange={e => updateVibrationAnim(activeEntity.id, anim.id, { endMarkerId: e.target.value })}
+                                        value={anim.endMarkerId || ''}
+                                        onChange={e => updateVibrationAnim(activeEntity.id, anim.id, { 
+                                            endMarkerId: e.target.value === '' ? undefined : e.target.value 
+                                        })}
                                         style={{ width: '100%', fontSize: '12px' }}
                                     >
-                                        <option value="">Select Marker...</option>
+                                        <option value="">Duration based...</option>
                                         {sortedMarkers.map(m => (
                                             <option key={m.id} value={m.id}>{m.name || 'M?'} ({TimeMath.formatTime(m.timestampMs)})</option>
                                         ))}
                                     </select>
                                 </div>
+
+                                {!anim.endMarkerId && (
+                                    <div style={{ marginBottom: '8px' }}>
+                                        <label style={{ fontSize: '10px', display: 'block' }}>Duration ({anim.durationMs || 1000}ms)</label>
+                                        <input type="range" min="100" max="5000" step="100" value={anim.durationMs || 1000}
+                                            onChange={e => updateVibrationAnim(activeEntity.id, anim.id, { durationMs: parseInt(e.target.value) })}
+                                            style={{ width: '100%' }} />
+                                    </div>
+                                )}
                             </>
                         )}
 
@@ -216,6 +228,28 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = () => {
                         </div>
                     </div>
                 ))}
+            </div>
+
+            <div style={{ marginTop: '32px', borderTop: '2px solid #ccc', paddingTop: '16px' }}>
+                <button
+                    onClick={() => {
+                        if (confirm('Are you sure you want to delete this line and all its vibrations?')) {
+                            deleteEntity(activeEntity.id);
+                        }
+                    }}
+                    style={{
+                        width: '100%',
+                        padding: '12px',
+                        backgroundColor: '#ffebee',
+                        color: '#c62828',
+                        border: '1px solid #ffcdd2',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    Delete Line
+                </button>
             </div>
         </div>
     );

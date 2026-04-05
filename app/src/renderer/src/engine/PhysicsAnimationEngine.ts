@@ -1,7 +1,7 @@
 import { IAnimationEngine } from './IAnimationEngine';
 import { IWavePropagationStrategy } from './IWavePropagationStrategy';
-import { LineEntity, Point, AppState } from '../store/types';
-import { useAppStore } from '../store/useAppStore';
+import { LineEntity, Point } from '../store/types';
+import { ProjectState } from './ProjectState';
 
 type MeshNode = {
     pt: Point,
@@ -58,8 +58,7 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
         return Math.max(0, Math.min(1.0, percent));
     }
 
-    public calculateDeformedMesh(entity: LineEntity, timestampMs: number, appStateArg?: AppState): Point[] {
-        const appState = appStateArg || useAppStore.getState();
+    public calculateDeformedMesh(entity: LineEntity, timestampMs: number, appState: ProjectState): Point[] {
         if (!entity.animations || entity.animations.length === 0) {
             return entity.vertices;
         }
@@ -130,7 +129,7 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
                 } else {
                     // Temporal (Timeline) Logic
                     const startMarker = appState.audio.markers.find(m => m.id === anim.startMarkerId);
-                    const endMarker = appState.audio.markers.find(m => m.id === anim.endMarkerId);
+                    const endMarker = anim.endMarkerId ? appState.audio.markers.find(m => m.id === anim.endMarkerId) : null;
                     
                     if (!startMarker) continue;
 
@@ -139,6 +138,11 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
                     
                     if (endMarker && timestampMs > endMarker.timestampMs) {
                         dampingStartTimeMs = timestampMs - endMarker.timestampMs;
+                    } else if (!endMarker && anim.durationMs !== undefined) {
+                        const durationPassed = timeActiveMs - anim.durationMs;
+                        if (durationPassed > 0) {
+                            dampingStartTimeMs = durationPassed;
+                        }
                     }
 
                     if (timeActiveMs > 0 && timeActiveMs < 5000) { // Limit timeline waves too for safety
@@ -165,13 +169,13 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
                 }
             }
             
-            if (totalDisplacement !== 0) {
-                deformedMesh.push({
-                    x: node.pt.x + (node.nx * totalDisplacement),
-                    y: node.pt.y + (node.ny * totalDisplacement)
-                });
-            } else {
+            const nextX = totalDisplacement !== 0 ? node.pt.x + (node.nx * totalDisplacement) : node.pt.x;
+            const nextY = totalDisplacement !== 0 ? node.pt.y + (node.ny * totalDisplacement) : node.pt.y;
+
+            if (isNaN(nextX) || isNaN(nextY) || !isFinite(nextX) || !isFinite(nextY)) {
                 deformedMesh.push(node.pt);
+            } else {
+                deformedMesh.push({ x: nextX, y: nextY });
             }
         }
 
@@ -212,9 +216,9 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
             const maxRadiusForAngle = Math.min(len1, len2) / 2 * Math.tan(angle / 2);
             safeRadius = Math.min(safeRadius, maxRadiusForAngle);
 
-            const tangentDist = safeRadius > 0.001 ? safeRadius / Math.tan(angle / 2) : 0;
+            const tangentDist = (safeRadius > 0.001 && !isNaN(angle) && angle > 0.001) ? safeRadius / Math.tan(angle / 2) : 0;
 
-            if (safeRadius > 0.1 && !isNaN(tangentDist)) {
+            if (safeRadius > 0.1 && !isNaN(tangentDist) && isFinite(tangentDist)) {
                 const P1 = origP1;
 
                 const t0x = P1.x + tangentDist * (v1x / len1);
@@ -265,8 +269,8 @@ export class PhysicsAnimationEngine implements IAnimationEngine {
         const segmentDist = Math.sqrt(dx * dx + dy * dy);
         if (segmentDist < 0.1) return totalLength;
 
-        const ux = dx / segmentDist;
-        const uy = dy / segmentDist;
+        const ux = segmentDist > 0.0001 ? dx / segmentDist : 0;
+        const uy = segmentDist > 0.0001 ? dy / segmentDist : 0;
         const nx = -uy;
         const ny = ux;
 

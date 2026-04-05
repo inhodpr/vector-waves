@@ -53,13 +53,111 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  ipcMain.handle('save-project', async (_, jsonString) => {
+  ipcMain.handle('save-project', async (_, projectData) => {
     const { filePath } = await dialog.showSaveDialog({ filters: [{ name: 'VVA', extensions: ['vva'] }] });
-    if (filePath) {
-      fs.writeFileSync(filePath, jsonString);
+    if (!filePath) return false;
+
+    try {
+      console.log(`[MAIN] Starting project save to: ${filePath}`);
+      const projectDir = join(filePath, '..');
+      const assetsDirName = 'assets'; 
+      const assetsPath = join(projectDir, assetsDirName);
+
+      if (projectData.assets && projectData.assets.images) {
+        console.log(`[MAIN] Processing ${Object.keys(projectData.assets.images).length} image assets...`);
+        if (!fs.existsSync(assetsPath)) {
+          fs.mkdirSync(assetsPath, { recursive: true });
+        }
+
+        for (const id in projectData.assets.images) {
+          const asset = projectData.assets.images[id];
+          if (asset.buffer) {
+            let buffer: Buffer;
+            
+            // Handle structured-cloned Uint8Array or legacy serialized object
+            if (asset.buffer instanceof Uint8Array) {
+                buffer = Buffer.from(asset.buffer);
+            } else if (typeof asset.buffer === 'object' && asset.buffer !== null) {
+                const values = Object.values(asset.buffer);
+                buffer = Buffer.from(values as number[]);
+            } else {
+                buffer = Buffer.from(asset.buffer);
+            }
+
+            let ext = 'png';
+            if (asset.originalPath) {
+                const parts = asset.originalPath.split('.');
+                if (parts.length > 1) ext = parts[parts.length - 1];
+            }
+            
+            const filename = `${id}.${ext}`;
+            const fullAssetPath = join(assetsPath, filename);
+            
+            console.log(`[MAIN] Writing asset: ${filename} (${buffer.length} bytes)`);
+            fs.writeFileSync(fullAssetPath, buffer);
+            
+            asset.relativePath = join(assetsDirName, filename);
+            delete asset.buffer;
+          }
+        }
+      }
+
+      console.log(`[MAIN] Writing project file: ${filePath}`);
+      fs.writeFileSync(filePath, JSON.stringify(projectData, null, 2));
+      console.log(`[MAIN] Project saved successfully.`);
       return true;
+    } catch (e) {
+      console.error('[MAIN] Failed to save project with assets:', e);
+      return false;
     }
-    return false;
+  });
+
+  function hydrateProjectAssets(projectData: any, projectDir: string) {
+    if (projectData.assets && projectData.assets.images) {
+      for (const id in projectData.assets.images) {
+        const asset = projectData.assets.images[id];
+        if (asset.relativePath) {
+          const absoluteAssetPath = join(projectDir, asset.relativePath);
+          if (fs.existsSync(absoluteAssetPath)) {
+            const buffer = fs.readFileSync(absoluteAssetPath);
+            asset.buffer = new Uint8Array(buffer);
+          }
+        }
+      }
+    }
+    return projectData;
+  }
+
+  ipcMain.handle('load-project', async () => {
+    const { filePaths } = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'VVA', extensions: ['vva'] }] });
+    if (!filePaths || filePaths.length === 0) return null;
+
+    const filePath = filePaths[0];
+    const projectDir = join(filePath, '..');
+
+    try {
+      const jsonString = fs.readFileSync(filePath, 'utf-8');
+      const projectData = JSON.parse(jsonString);
+      hydrateProjectAssets(projectData, projectDir);
+      return projectData; // Return the object directly
+    } catch (e) {
+      console.error('[MAIN] Failed to load project with assets:', e);
+      return null;
+    }
+  });
+
+  ipcMain.handle('read-vva-file', async (_, absolutePath) => {
+    if (!fs.existsSync(absolutePath)) return null;
+    try {
+      const projectDir = join(absolutePath, '..');
+      const jsonString = fs.readFileSync(absolutePath, 'utf-8');
+      const projectData = JSON.parse(jsonString);
+      hydrateProjectAssets(projectData, projectDir);
+      return projectData; // Return the object directly
+    } catch (e) {
+      console.error('[MAIN] Failed to read-vva-file with assets:', e);
+      return null;
+    }
   });
 
   ipcMain.handle('select-audio-file', async () => {
@@ -107,12 +205,64 @@ app.whenReady().then(() => {
     };
   });
 
-  ipcMain.handle('load-project', async () => {
-    const { filePaths } = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'VVA', extensions: ['vva'] }] });
-    if (filePaths && filePaths.length > 0) {
-      return fs.readFileSync(filePaths[0], 'utf-8');
+  ipcMain.handle('fetch-osm-map', async (_, { location, layers }) => {
+    const { spawn } = require('child_process');
+    
+    // In production, the path to resources might change
+    const scriptPath = is.dev 
+      ? join(__dirname, '../../resources/map_processor.py')
+      : join(process.resourcesPath, 'app.asar.unpacked/resources/map_processor.py');
+
+    console.log(`Executing OSM fetch: ${scriptPath} for ${location} (${layers})`);
+
+    return new Promise((resolve) => {
+      const py = spawn('python3', [scriptPath, location, layers.join(',')]);
+      let stdout = '';
+      let stderr = '';
+
+      py.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      py.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      py.on('close', (code: number) => {
+        if (code !== 0) {
+          console.error(`OSM processor failed (code ${code}): ${stderr}`);
+          resolve({ error: `Python process failed with code ${code}. ${stderr}` });
+        } else {
+          try {
+            resolve(JSON.parse(stdout));
+          } catch (e) {
+            console.error(`Failed to parse OSM processor output: ${e}`);
+            resolve({ error: `Malformed output from processor: ${stdout}` });
+          }
+        }
+      });
+    });
+  });
+
+  ipcMain.handle('fetch-image', async (_, { url }) => {
+    try {
+      console.log(`Executing fetch-image for: ${url}`);
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'VectorVibeAnimator/1.0',
+          'Accept': 'image/png,image/jpeg,*/*'
+        }
+      });
+      if (!response.ok) {
+        return { error: `HTTP ${response.status} ${response.statusText}` };
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      // Pass as Uint8Array so it crosses IPC barrier cleanly
+      return { buffer: new Uint8Array(arrayBuffer) };
+    } catch (e: any) {
+      console.error(`Failed to fetch image: ${e}`);
+      return { error: e.message || 'Unknown fetch error' };
     }
-    return null;
   });
 
   // --- FFmpeg Export Handlers ---
@@ -266,7 +416,47 @@ app.whenReady().then(() => {
     }
   });
 
-  createWindow()
+
+  // Check for CLI arguments for Player Mode
+  // Expected: --player --file /path/to/project.vva --fmin 20 --fmax 500 ...
+  const args = process.argv;
+  const isPlayerFlag = args.includes('--player');
+  const fileArgIdx = args.indexOf('--file');
+  const playerFile = fileArgIdx !== -1 ? args[fileArgIdx + 1] : null;
+
+  if (isPlayerFlag && playerFile) {
+    createPlayerWindow(playerFile, args);
+  } else {
+    createWindow();
+  }
+
+  function createPlayerWindow(filePath: string, allArgs: string[]): void {
+      const playerWindow = new BrowserWindow({
+          fullscreen: true,
+          autoHideMenuBar: true,
+          webPreferences: {
+              preload: join(__dirname, '../preload/index.js'),
+              sandbox: false
+          }
+      });
+
+      // Extract extra params from args to pass via URL
+      const extraParams = new URLSearchParams();
+      extraParams.set('mode', 'player');
+      extraParams.set('file', filePath);
+      
+      const paramKeys = ['fmin', 'fmax', 'amin', 'amax'];
+      paramKeys.forEach(key => {
+          const idx = allArgs.indexOf(`--${key}`);
+          if (idx !== -1) extraParams.set(key, allArgs[idx + 1]);
+      });
+
+      if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+          playerWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?${extraParams.toString()}`);
+      } else {
+          playerWindow.loadFile(join(__dirname, '../renderer/index.html'), { query: Object.fromEntries(extraParams.entries()) });
+      }
+  }
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

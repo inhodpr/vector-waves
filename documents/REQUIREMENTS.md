@@ -85,7 +85,7 @@ sequenceDiagram
 | `[Action] Import Image | | `[Action]` Add New Vibration |
 | `[Action] Save Project | | `[Slider]` Frequency (1-10 Scale) |
 | `[Action] Export MP4 | | `[Slider]` Amplitude (Absolute px) |
-| | | `[Dropdown]` Damping Easing Profile |
+| `[Tool] Extract Line  | | `[Dropdown]` Damping Easing Profile |
 | | | **Background & Map Panel** |
 | | | `[Input]` Canvas Width/Height |
 | | | `[Action]` Import Geopandas Map |
@@ -133,6 +133,7 @@ sequenceDiagram
 * `[Action]` `[Action_ZOrder]` `[Click]` `[Modifies rendering array index of the selected object]`
 * `[Button]` `[Action_Play]` `[Click]` `[Starts audio playback from timeline and renders synced canvas animation logic sequence]`
 * `[Action]` `[Action_SaveProject]` `[Click]` `[Create a project directory, copy required audio tracks into it, and serialize canvas objects, timeline markers, and relative audio file pointers into a JSON representation]`
+* `[Toggle]` `[Tool_ExtractLine]` `[Interaction]` `[User clicks eye-dropper to select target color. Single-clicks add normal vertices. Double-clicking "snaps" to the center (the ridge) of the nearest line matching the target color. Placing vertices in the dead-center ensures that the resulting strokeWidth covers the background line symmetrically and that animations/vibrations propagate correctly. Consecutive snap-points trigger the "Extraction & Healing" process: a new Line entity is created with average width/color, and a "Heal Patch" (interpolated background) is generated. This patch is only rendered with a 100ms cross-fade when the line is actively animating to hide the original image's static line.]`
 
 ### 3.3 Properties & Parameters
 * `[Input]` `[Stroke/Fill Color]` `[Color Picker]` `[Update selected active object visual style]`
@@ -193,6 +194,7 @@ sequenceDiagram
 * Interactive Background Image controls (Drag, Zoom, Crop).
 * Tweakable Canvas Size in UI.
 * Geopandas Map integration and feature-to-line conversion.
+* **Line Extraction & Hybrid Healing:** Tool to extract animatable lines from background images and automatically mask the original image "ghost" during animation.
 ### Phase 5: Real-Time Audio & Live Performance
 **Goal:** Enable responsive animation from external sound sources.
 * Implementation of `LiveAudioAdapter` using `getUserMedia` and `AnalyserNode`.

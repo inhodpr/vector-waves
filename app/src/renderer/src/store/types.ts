@@ -21,7 +21,8 @@ export interface ActiveTrigger {
 export interface VibrationAnim {
     id: string;
     startMarkerId: string;
-    endMarkerId: string;
+    endMarkerId?: string;
+    durationMs?: number; // Optional duration in ms if no end marker is used
     frequency: number;
     amplitude: number;
     edgeDamping: number;
@@ -51,7 +52,25 @@ export interface ImageEntity {
     height: number;
 }
 
-export type CanvasEntity = LineEntity | ImageEntity;
+export interface ImageLayerEntity {
+    id: string;
+    type: 'ImageLayer';
+    zIndex: number;
+    assetId: string; // The Blob URL for the rasterized view
+    rasterizedZoomLevel: number;
+    x: number;
+    y: number;
+    scale: number;
+    width: number;
+    height: number;
+    cropX?: number;
+    cropY?: number;
+    cropWidth?: number;
+    cropHeight?: number;
+    cacheKey?: string; // OSM Cache key for re-rasterization
+}
+
+export type CanvasEntity = LineEntity | ImageEntity | ImageLayerEntity;
 
 export interface AudioTrack {
     id: string;
@@ -99,6 +118,10 @@ export interface AppState {
     canvasHeight: number;
     backgroundColor: string;
     backgroundImageAssetId: string | null;
+    backgroundImageTransform: { x: number; y: number; scale: number };
+    backgroundEditMode: boolean;
+    canvasTransform: { x: number; y: number; scale: number };
+    activeLayerId: string | null;
 
     // Audio State
     audio: AudioState;
@@ -121,8 +144,10 @@ export interface AppState {
 
     // Editor UI State
     selectedEntityId: string | null;
-    activeTool: 'Select' | 'Draw' | 'EditPts';
+    activeTool: 'Select' | 'Draw' | 'EditPts' | 'Extract';
     isDragging: boolean;
+    isExtracting: boolean;
+    isSaving: boolean;
     timelineZoomLevel: number;      // Pixels per millisecond
     timelineScrollOffsetPx: number; // Horizontal scroll position
     logs: LogEntry[];
@@ -136,10 +161,17 @@ export interface AppState {
     updateEntityStyle: (id: string, styleUpdate: Partial<EntityStyle>) => void;
     updateEntity: (id: string, entityUpdate: Partial<CanvasEntity>) => void;
     addEntity: (entity: CanvasEntity) => void;
+    addEntities: (entities: CanvasEntity[]) => void;
     deleteEntity: (id: string) => void;
     setSelectedEntityId: (id: string | null) => void;
-    setActiveTool: (tool: 'Select' | 'Draw' | 'EditPts') => void;
+    setActiveTool: (tool: 'Select' | 'Draw' | 'EditPts' | 'Extract') => void;
     setIsDragging: (isDragging: boolean) => void;
+    setIsExtracting: (active: boolean) => void;
+    setBackgroundEditMode: (active: boolean) => void;
+    setBackgroundImageTransform: (transform: { x: number; y: number; scale: number }) => void;
+    setCanvasTransform: (transform: { x: number; y: number; scale: number }) => void;
+    updateLayerTransform: (id: string, transform: { x?: number; y?: number; scale?: number }) => void;
+    reRasterizeOSMLayer: (id: string, newZoomScale: number, viewportBounds: { panX: number; panY: number; width: number; height: number }) => Promise<void>;
 
     // Z-Order Actions
     bringForward: (id: string) => void;
@@ -165,6 +197,7 @@ export interface AppState {
     // Project Actions
     setBackgroundColor: (color: string) => void;
     setBackgroundImage: (assetId: string | null) => void;
+    setCanvasSize: (width: number, height: number) => void;
 
     // Asset Actions
     addImageAsset: (asset: AssetData) => void;

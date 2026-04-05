@@ -15,6 +15,9 @@
     "paths": {
       "@renderer/*": [
         "src/renderer/src/*"
+      ],
+      "@visual-map/*": [
+        "../../visual_map/src/*"
       ]
     }
   }

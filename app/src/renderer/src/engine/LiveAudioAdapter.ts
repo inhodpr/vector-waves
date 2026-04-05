@@ -70,9 +70,11 @@ export class LiveAudioAdapter implements ITimeSource {
                         const { slotIndex, intensity, timestamp } = e.data;
                         const slotId = this.slotIds[slotIndex];
                         if (slotId) {
-                            this.peakListeners.forEach(cb => cb({ slotId, intensity, timestampMs: timestamp }));
+                            const event = { slotId, intensity, timestampMs: timestamp };
+                            this.peakListeners.forEach(cb => cb(event));
+                            this.queuedPeaks.push(event);
                             if (this.messagePort) {
-                                this.messagePort.postMessage({ type: 'DETACHED_PLUCK', payload: { slotId, intensity, timestampMs: timestamp } });
+                                this.messagePort.postMessage({ type: 'DETACHED_PLUCK', payload: event });
                             }
                         }
                     }
@@ -136,9 +138,11 @@ export class LiveAudioAdapter implements ITimeSource {
             
             const slotId = this.slotIds[slotIndex];
             if (slotId) {
-                this.peakListeners.forEach(cb => cb({ slotId, intensity, timestampMs }));
+                const event = { slotId, intensity, timestampMs };
+                this.peakListeners.forEach(cb => cb(event));
+                this.queuedPeaks.push(event);
                 if (this.messagePort) {
-                    this.messagePort.postMessage({ type: 'DETACHED_PLUCK', payload: { slotId, intensity, timestampMs } });
+                    this.messagePort.postMessage({ type: 'DETACHED_PLUCK', payload: event });
                 }
             }
 
@@ -270,5 +274,13 @@ export class LiveAudioAdapter implements ITimeSource {
             count++;
         }
         return count > 0 ? sum / count : 0;
+    }
+
+    private queuedPeaks: TriggerEvent[] = [];
+
+    public getLatestPeaks(): TriggerEvent[] {
+        const peaks = [...this.queuedPeaks];
+        this.queuedPeaks = [];
+        return peaks;
     }
 }

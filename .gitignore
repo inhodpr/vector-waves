@@ -1,4 +1,12 @@
 node_modules
+julio
+media
+projects
+reviews
+exports
+documents/REVIEW_*.md
+app/resources/.osm_cache
+app/resources/__py_cache__
 dist
 out
 build

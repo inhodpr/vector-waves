@@ -8,7 +8,8 @@ export default defineConfig({
   renderer: {
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@renderer': resolve('src/renderer/src'),
+        '@visual-map': resolve(__dirname, '../../visual_map/src')
       }
     },
     plugins: [react()],

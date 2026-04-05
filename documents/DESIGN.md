@@ -37,9 +37,10 @@ In a local desktop environment handling both real-time UI/canvas updates and hea
 
 ### Phase 4: Polish & Export Media
 * **Phase Objective:** Finalize media export via FFmpeg and image cropping/importing.
-* **Architectural Impact:** Integrates the `FFmpegExportAdapter`. Modifies the serialization/deserialization logic to handle a new `FreeFloatingBoundedObject` (images).
+* **Architectural Impact:** Integrates the `FFmpegExportAdapter`. Modifies the serialization/deserialization logic to handle a new `FreeFloatingBoundedObject` (images). Introduces the `LineExtractor` module for pixel-based background analysis.
 * **Design Hooks:**
   * `IExportPipeline`: Interface defining the export contract. Prepares the system for future export media targets.
+  * **Line Extraction Logic:** Implements Ridge Tracing (local gradient peak detection) and Bi-linear Interpolation for non-destructive "Heal Patch" generation.
 ### Phase 5: Real-Time Audio & Live Performance
 * **Phase Objective:** Enable responsive animation from external sound sources.
 * **Architectural Impact:** Introduces a `LiveAudioAdapter` and an `AudioDeviceManager`. The `IAnimationEngine` is updated to handle reactive triggers in addition to temporal markers.
@@ -60,7 +61,13 @@ The `.vva` project schema uses a normalized, relational JSON structure, avoiding
     "exportDefaults": {"resolution": "1080p", "fps": 60}
   },
   "assets": {
-    "images": [{"id": "img1", "path": "./local/assets/img1.png", "bounds": {"w": 200, "h": 200}}]
+    "images": [{"id": "img1", "path": "./local/assets/img1.png", "buffer": "..."}]
+  },
+  "projectSettings": {
+    "dimensions": {"width": 1080, "height": 1080},
+    "backgroundColor": "#FFFFFF",
+    "backgroundImageAssetId": "img1",
+    "backgroundImageTransform": {"x": 0, "y": 0, "scale": 1.0}
   },
   "audio": {
     "tracks": [{"id": "trk1", "path": "./local/audio/bgm.mp3"}],
@@ -76,6 +83,7 @@ The `.vva` project schema uses a normalized, relational JSON structure, avoiding
       "zIndex": 1,
       "style": {"strokeColor": "#FF0000", "strokeWidth": 2, "fillColor": "transparent", "globalRadius": 5},
       "geometry": {"vertices": [], "pluckOrigin": 0.5},
+      "healPatchAssetId": "patch1", // New field for non-destructive hybrid healing
       "animations": [
         {
           "id": "anim1",
@@ -102,11 +110,12 @@ The `.vva` project schema uses a normalized, relational JSON structure, avoiding
   }
 }
 ```
-*Growth Account:* Entities are stored in a flat dictionary keyed by string IDs (`Record<string, CanvasEntity>`), allowing O(1) lookups and easy Z-order sorting via a separate ID array. Animations are nested directly within the `Line` entity they modify, mapping to the Phase 3 requirement of "constructive interference on the same line segment" without forcing the 60fps render loop to perform expensive global relational lookups. Image entities are fully supported as a distinct polymorphic type.
+*Growth Account:* Entities are stored in a flat dictionary keyed by string IDs (`Record<string, CanvasEntity>`), allowing O(1) lookups and easy Z-order sorting via a separate ID array. Animations are nested directly within the `Line` entity they modify, mapping to the Phase 3 requirement of "constructive interference on the same line segment". Background images are handled as a single global asset with a persistent `backgroundImageTransform` to allow interactive cropping/framing without destructive editing of the source asset.
 
 ## 4. Extensibility Patterns
 
 * **Strategy Pattern:** Used for calculating the `AnimEasing` (Linear vs. Exponential) and the 1D wave physics inside the `IWavePropagationStrategy`. When new mathematical decays or wave mechanisms are requested, a new Strategy class is added without altering the engine.
+* **Hybrid Healing Pattern (Conditional Patching):** The `CanvasEngine` implements a "Patch-Before-Stroke" rule. If an entity is actively animating (`amplitude > 0`), the engine first renders its associated `healPatchAssetId` over the background with a 100ms alpha cross-fade, effectively masking the static "ghost" line in the original image.
 * **Observer Pattern / EventBus:** The `TimelineManager`, `CanvasEditor`, and `PropertiesPanel` will act as discrete observers of a central application state. 
 * **Dependency Injection:** The core application bootstrapper injects interface adapters. This prevents tight coupling.
 
@@ -116,6 +125,15 @@ The `.vva` project schema uses a normalized, relational JSON structure, avoiding
 * *Why:* Tying the precise visual state of a front-end canvas (tied to imperfect real-time clocks) to an external FFmpeg binary is notoriously desync-prone. 
 * *Risk:* The UI preview may stutter or run at an imperfect framerate locally, but the MP4 output *must* be perfectly framed and synced to the generated audio packet.
 * *Mitigation:* The `IAnimationEngine` must be purely deterministic, relying entirely on the `timestampMs` input variable rather than frame-to-frame delta times. During Phase 4 export, the system cannot record the UI canvas live. Instead, it will manually step the internal engine via a headless render loop, passing precise 1/FPS timestamps derived from the Export Preset to capture each frame individually before piping the raw pixels to FFmpeg.
+
+### 5.1 Feature-Specific Risks: Line Extraction & Hybrid Healing
+A dedicated analysis of the architectural risks associated with the forthcoming Image Extraction and Healing features (Phase 4):
+
+1. **In-Painting Quality (The "Heal" Problem)**: Bi-linear Interpolation may result in "blurry smudges" on non-solid backgrounds. We may need to evaluate patch-based synthesis or edge-clamping to maintain background texture during high-amplitude vibrations.
+2. **Real-Time Blending Overhead**: Multi-layer alpha blending for "Heal Patches" and animated lines may jeopardize the 60fps rendering budget, especially when syncing across multiple renderer processes.
+3. **IPC Latency (Asset Sync)**: Large on-the-fly generated image patches could saturate the MessagePort Fast-Path used by the Unified Sync Strategy. Pre-caching or disk-backed relay may be required.
+4. **Ridge Tracing Robustness**: Gradient peak detection is sensitive to focal blur and compression noise. Pre-processing filters (Gaussian/Bilateral) and adjustable "snap" thresholds will be critical for UX.
+5. **Asset Lifecycle & "Orphaning"**: The `.vva` schema must strictly manage the correlation between Line Entities and their associated Heal Patch assets to prevent project directory bloat.
 
 ## 6. Architecture Visuals
 
@@ -150,6 +168,34 @@ sequenceDiagram
     EventBus->>UI_ExportDialog: Render Success Modal
 ```
 
+### Line Extraction & Healing Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Tool_Extract
+    participant OffscreenCanvas
+    participant Store
+    participant CanvasEngine
+
+    User->>Tool_Extract: Eye-drop color + Click points (A, B)
+    Tool_Extract->>OffscreenCanvas: Analyze pixels between A & B
+    OffscreenCanvas-->>Tool_Extract: Return Ridge Path & Avg Width
+    Tool_Extract->>OffscreenCanvas: Generate Interpolated "Heal Patch"
+    OffscreenCanvas-->>Tool_Extract: Return Patch Buffer
+    Tool_Extract->>Store: Create LineEntity + Add Heal Patch Asset
+    
+    loop Every Frame
+        CanvasEngine->>Store: Get Line State
+        alt isAnimating == true
+            CanvasEngine->>CanvasEngine: Render Heal Patch (100ms Cross-fade)
+            CanvasEngine->>CanvasEngine: Render Vibrating Line
+        else isAnimating == false
+            CanvasEngine->>CanvasEngine: Render Static Line (Perfectly overlays original)
+        end
+    end
+```
+
 ### Phase Matrix Table
 
 | Requirement Component | Architectural Module | Phase Introduced | Extensibility / Notes |
@@ -161,8 +207,9 @@ sequenceDiagram
 | **Audio Waveform / Playback** | `AudioPlaybackAdapter` | Phase 2 | Realtime integration decoupled via `ITimeSource`. |
 | **Pluck Physics / Math** | `IWavePropagationStrategy` | Phase 3 | Mathematical logic abstracted via Strategy Pattern. |
 | **Video Rendering (MP4)** | `FFmpegExportAdapter` | Phase 4 | Handled purely through deterministic headless stepping. |
-| **Image Cropping** | `UI Modals` & `ImageCanvasEntity` | Phase 4 | Extends Phase 1 core logic for non-vector geometry. |
+| **Image Extraction & Healing** | `LineExtractor` | Phase 4 | Non-destructive "Heal Patch" approach for background cleanup. |
 | **Real-Time Audio** | `LiveAudioAdapter` | Phase 5 | Reactive triggering via Web Audio `AnalyserNode`. |
+| **Map Integration** | `Geopandas Bridge` | Phase 4+ | Python-based spatial data processing and normalization. |
 
 ## 7. Detailed Blueprint: Phase 1 (Core Engine & Visualization MVP)
 
@@ -238,6 +285,8 @@ export interface AppState {
   canvasWidth: number;
   canvasHeight: number;
   backgroundColor: string;
+  backgroundImageAssetId: string | null;
+  backgroundImageTransform: { x: number; y: number; scale: number };
 
   // Domain Data
   entities: Record<string, CanvasEntity>; // Polymorphic support
