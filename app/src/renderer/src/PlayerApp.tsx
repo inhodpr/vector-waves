@@ -101,8 +101,13 @@ export const PlayerApp: React.FC = () => {
             let lineCounter = 0;
             for (const id in projectData.entities) {
                 const entity = projectData.entities[id];
-                if (entity.type === 'Line' && entity.animations) {
-                    entity.animations = entity.animations.map(anim => {
+                if (entity.type === 'Line') {
+                    // TL REQUIREMENT: Even if no animations exist, add one so everything is reactive
+                    const baseAnims = (entity.animations && entity.animations.length > 0) 
+                        ? entity.animations 
+                        : [{ id: `auto_${id}`, edgeDamping: 20, easing: 'Exponential', startMarkerId: '' }];
+
+                    entity.animations = baseAnims.map(anim => {
                         // Randomize freq/amp within requested range
                         const f = freqRange.min + Math.random() * (freqRange.max - freqRange.min);
                         const a = ampRange.min + Math.random() * (ampRange.max - ampRange.min);
