@@ -12,13 +12,13 @@
 ```mermaid
 stateDiagram-v2
     [*] --> SetupScreen
-    SetupScreen --> CanvasEditorScreen : Select Size & BG Color
+    SetupScreen --> CanvasEditorScreen : Select Size (Preset/Custom) & BG Color
     CanvasEditorScreen --> SetupScreen : Load Project File (.vva)
     
     state CanvasEditorScreen {
         [*] --> Idle
-        Idle --> CropImageModal : Trigger Image Import
-        CropImageModal --> Idle : Confirm Crop
+        Idle --> BackgroundImageModal : Trigger Image Import
+        BackgroundImageModal --> Idle : Drag, Zoom & Crop to Canvas
         Idle --> ExportDialog : Trigger Export
         Idle --> PreviewRender : Click Play/Preview (Syncs Audio)
         PreviewRender --> Idle : Stop/Finish
@@ -27,7 +27,10 @@ stateDiagram-v2
         Idle --> LiveMode : Toggle "Live Mode"
         LiveMode --> Idle : Toggle Off
         Idle --> SaveDialog: Trigger Save Project
+        Idle --> DetachedPreviewWindow : Click "Detach Preview"
     }
+
+    DetachedPreviewWindow --> CanvasEditorScreen : Close Window / Click "Reattach"
 
     state LiveMode {
         [*] --> Monitoring
@@ -66,7 +69,8 @@ sequenceDiagram
 | App Header | Action Area | Configuration |
 |---|---|---|
 | Vector Vibe Animator | `[Button]` New Feed (1080x1080) | `[Input]` Solid Canvas BG Color |
-| | `[Button]` New Story (1080x1920) | |
+| | `[Button]` New Story (1080x1920) | `[Input]` Custom Width/Height |
+| | `[Button]` New Custom Size | |
 | | `[Button]` Load Existing Project | |
 
 ### 2.2 Main Canvas Editor
@@ -75,13 +79,17 @@ sequenceDiagram
 | `[Tool]` Select Obj | Canvas Viewport | **Styling Panel** |
 | `[Tool]` Draw Line/Poly | (Masked to chosen ratio) | `[Input]` Stroke Width & Style |
 | `[Tool]` Edit Points | `[Handle]` Pluck Node (Draggable) | `[Input]` Stroke / Fill Color |
-| `[Action]` Layer ↑ Forward| `[Action]` Pan / Zoom | `[Input]` Corner Radius (Absolute px, no scaling) |
-| `[Action]` Layer ↓ Backward| `[Action]` Play/Preview | **Animation Panel** |
-| `[Action]` Layer ⤒ To Front| | `[List]` Active Animations with `[X]` to delete |
-| `[Action]` Layer ⤓ To Back | | `[Action]` Add New Vibration |
-| `[Action]` Import Image | | `[Slider]` Frequency (1-10 Scale) |
-| `[Action]` Save Project | | `[Slider]` Amplitude (Absolute px) |
-| `[Action]` Export MP4 | | `[Dropdown]` Damping Easing Profile |
+| `[Action]` Layer ↓ Backward| `[Action]` Pan / Zoom | `[Input]` Corner Radius (Absolute px, no scaling) |
+| `[Action]` Layer ⤒ To Front| `[Action]` Play/Preview | **Animation Panel** |
+| `[Action] Layer ⤓ To Back | `[Action] Detach Preview | `[List]` Active Animations with `[X]` to delete |
+| `[Action] Import Image | | `[Action]` Add New Vibration |
+| `[Action] Save Project | | `[Slider]` Frequency (1-10 Scale) |
+| `[Action] Export MP4 | | `[Slider]` Amplitude (Absolute px) |
+| `[Tool] Extract Line  | | `[Dropdown]` Damping Easing Profile |
+| | | **Background & Map Panel** |
+| | | `[Input]` Canvas Width/Height |
+| | | `[Action]` Import Geopandas Map |
+| | | `[List]` Map Features (Selectable as Lines) |
 | | | **Timeline / Live Panel** |
 | | | `[Toggle]` Live Mode (Mic/System Input) |
 | | | `[Dropdown]` Audio Input Device Selector |
@@ -89,10 +97,15 @@ sequenceDiagram
 | | | `[Action]` Add/Rename Audio Marker |
 
 ### 2.3 Modal Windows
-**Image Cropper**
-| `[View]` Raw Image Viewport |
-| `[Tool]` Drag & Scale Overlay Rectangle |
-| `[Button]` Cancel \| `[Button]` Confirm Crop (Creates free-floating object) |
+**Background Image Editor**
+| `[View]` Interactive Image Viewport (Overlay on Canvas) |
+| `[Tool]` Drag, Zoom, and Crop handles |
+| `[Button]` Cancel \| `[Button]` Confirm (Fits image to canvas area) |
+
+**Map Feature Selector**
+| `[List]` Geopandas layers/features (e.g., roads, rails, boundaries) |
+| `[Checkbox]` Select feature to convert to editable VVA Line |
+| `[Button]` Import Selected Features |
 
 **Export Dialog**
 | `[Label]` Select Export Quality |
@@ -107,7 +120,9 @@ sequenceDiagram
 * `[Button]` `[Setup_Feed]` `[Click]` `[Init 1080x1080 boundaries with BG color; route to Editor]`
 * `[Button]` `[Setup_Story]` `[Click]` `[Init 1080x1920 boundaries with BG color; route to Editor]`
 * `[Button]` `[Setup_Load]` `[Click]` `[Open file browser for proprietary JSON logic file, restore shapes and timeline state]`
-* `[Modal]` `[CropImageModal]` `[Confirm Crop Click]` `[Calculate sub-rectangle bounds; append image to layer 0 as free-floating bounded object; Close]`
+* `[Button]` `[Setup_Custom]` `[Click]` `[Init custom dimensions boundaries with BG color; route to Editor]`
+* `[Modal]` `[BackgroundImageModal]` `[Confirm Click]` `[Apply transformation to background image so it fits canvas; Close]`
+* `[Modal]` `[MapImportModal]` `[Confirm Click]` `[Convert selected geopandas features into VVA line segments; Close]`
 * `[Modal]` `[ExportDialog]` `[Click High/Low]` `[Trigger MP4 render pipeline at requested 1080p/60fps or 720p/30fps preset covering full audio duration; route to Save]`
 
 ### 3.2 Toolbar Elements
@@ -118,6 +133,7 @@ sequenceDiagram
 * `[Action]` `[Action_ZOrder]` `[Click]` `[Modifies rendering array index of the selected object]`
 * `[Button]` `[Action_Play]` `[Click]` `[Starts audio playback from timeline and renders synced canvas animation logic sequence]`
 * `[Action]` `[Action_SaveProject]` `[Click]` `[Create a project directory, copy required audio tracks into it, and serialize canvas objects, timeline markers, and relative audio file pointers into a JSON representation]`
+* `[Toggle]` `[Tool_ExtractLine]` `[Interaction]` `[User clicks eye-dropper to select target color. Single-clicks add normal vertices. Double-clicking "snaps" to the center (the ridge) of the nearest line matching the target color. Placing vertices in the dead-center ensures that the resulting strokeWidth covers the background line symmetrically and that animations/vibrations propagate correctly. Consecutive snap-points trigger the "Extraction & Healing" process: a new Line entity is created with average width/color, and a "Heal Patch" (interpolated background) is generated. This patch is only rendered with a 100ms cross-fade when the line is actively animating to hide the original image's static line.]`
 
 ### 3.3 Properties & Parameters
 * `[Input]` `[Stroke/Fill Color]` `[Color Picker]` `[Update selected active object visual style]`
@@ -144,6 +160,8 @@ sequenceDiagram
 * `[Dropdown]` `[AnimEnd]` `[Select Marker]` `[Binds current animation's end/damping trigger to Marker ID. The list is sorted by time and displayed as "Name (Time)".]`
 * `[LiveAudio]` `[InputSelector]` `[Dropdown]` `[List all system audio input devices; switch active stream on change.]`
 * `[LiveAudio]` `[Monitor]` `[Visualizer]` `[Simple real-time level meter showing incoming signal strength.]`
+* `[Window]` `[DetachedPreview]` `[Interaction]` `[Dedicated window showing only the animation canvas. Real-time sync with main editor. Closing the window or clicking "Reattach" in the main editor restores the preview to the main window.]`
+* `[Map]` `[GeopandasLoader]` `[Internal]` `[Python/Node bridge to load spatial data; extract LineString/Polygon coordinates for conversion to VVA paths.]`
 
 ## 4. Implementation Roadmap
 
@@ -173,10 +191,14 @@ sequenceDiagram
 **Goal:** Get the project ready for public social media distribution.
 * The FFmpeg local execution pipeline to stitch canvas frames and audio.
 * High (1080p/60fps) and Low (720p/30fps) MP4 export defaults.
-* Image Cropping Modal and placing free-floating background images.
+* Interactive Background Image controls (Drag, Zoom, Crop).
+* Tweakable Canvas Size in UI.
+* Geopandas Map integration and feature-to-line conversion.
+* **Line Extraction & Hybrid Healing:** Tool to extract animatable lines from background images and automatically mask the original image "ghost" during animation.
 ### Phase 5: Real-Time Audio & Live Performance
 **Goal:** Enable responsive animation from external sound sources.
 * Implementation of `LiveAudioAdapter` using `getUserMedia` and `AnalyserNode`.
 * Audio device enumeration and selection UI.
 * Reactive trigger logic (Threshold + Frequency Band filtering).
+* Detached Preview Window for dedicated animation display.
 * Loopback audio support for recording system output (OS-dependent).

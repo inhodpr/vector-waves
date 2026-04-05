@@ -1,13 +1,14 @@
-import { LineEntity, Point, AppState } from '../store/types';
+import { LineEntity, Point } from '../store/types';
+import { ProjectState } from './ProjectState';
 
 export interface IAnimationEngine {
-    calculateDeformedMesh(entity: LineEntity, timestamp: number, state: AppState): Point[];
+    calculateDeformedMesh(entity: LineEntity, timestamp: number, state: ProjectState): Point[];
     getPluckOriginPoint(entity: LineEntity): Point | null;
     getClosestPluckPercentage(entity: LineEntity, cursorX: number, cursorY: number): number;
 }
 
 export class StubAnimationEngine implements IAnimationEngine {
-    calculateDeformedMesh(entity: LineEntity, _timestamp: number, _state: AppState): Point[] {
+    calculateDeformedMesh(entity: LineEntity, _timestamp: number, _state: ProjectState): Point[] {
         // Phase 1 MVP: Just return the original un-deformed vertices
         return entity.vertices;
     }

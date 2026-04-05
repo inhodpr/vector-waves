@@ -64,6 +64,10 @@ export class TimelineManager {
         this.audioAdapter.seek(timeMs);
     }
 
+    public getDurationMs() {
+        return this.audioAdapter.getDurationMs();
+    }
+
     public getAdapter() {
         return this.audioAdapter;
     }

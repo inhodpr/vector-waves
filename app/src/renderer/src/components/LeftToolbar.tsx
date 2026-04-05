@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 export const LeftToolbar = () => {
     const activeTool = useAppStore(state => state.activeTool);
     const setActiveTool = useAppStore(state => state.setActiveTool);
+    const isExtracting = useAppStore(state => state.isExtracting);
     const selectedEntityId = useAppStore(state => state.selectedEntityId);
 
     // Z-Order functions
@@ -26,6 +27,13 @@ export const LeftToolbar = () => {
             <button style={btnStyle(activeTool === 'Select')} onClick={() => setActiveTool('Select')}>Select</button>
             <button style={btnStyle(activeTool === 'Draw')} onClick={() => setActiveTool('Draw')}>Draw</button>
             <button style={btnStyle(activeTool === 'EditPts')} onClick={() => setActiveTool('EditPts')}>Edit Pts</button>
+            <button style={btnStyle(activeTool === 'Extract')} onClick={() => setActiveTool('Extract')}>Extract</button>
+
+            {isExtracting && (
+                <div style={{ color: '#ff5722', fontSize: '10px', textAlign: 'center', fontWeight: 'bold', animation: 'pulse 1s infinite' }}>
+                    PROCESSING...
+                </div>
+            )}
 
             <hr style={{ width: '100%', border: 'none', borderBottom: '1px solid #ccc', margin: '10px 0' }} />
 
@@ -48,10 +56,18 @@ export const LeftToolbar = () => {
             <hr style={{ width: '100%', border: 'none', borderBottom: '1px solid #ccc', margin: '10px 0' }} />
 
             <button 
-                style={{ padding: '8px', backgroundColor: '#2196F3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ 
+                    padding: '8px', 
+                    backgroundColor: useAppStore.getState().isSaving ? '#9E9E9E' : '#2196F3', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '4px', 
+                    cursor: useAppStore.getState().isSaving ? 'not-allowed' : 'pointer' 
+                }}
+                disabled={useAppStore(state => state.isSaving)}
                 onClick={() => useAppStore.getState().saveProject()}
             >
-                Save Project
+                {useAppStore(state => state.isSaving) ? 'Saving...' : 'Save Project'}
             </button>
 
             <button 
@@ -59,6 +75,13 @@ export const LeftToolbar = () => {
                 onClick={() => useAppStore.getState().loadProject()}
             >
                 Load Project
+            </button>
+
+            <button 
+                style={{ padding: '8px', backgroundColor: '#673AB7', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                onClick={() => (window as any).windowAPI.toggleDetachedPreview()}
+            >
+                Detach Preview
             </button>
         </div>
     );

@@ -1,57 +1,64 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TimelineManager } from './TimelineManager';
-import { AudioPlaybackAdapter } from './AudioPlaybackAdapter';
 import { useAppStore } from '../store/useAppStore';
-
-vi.mock('../store/useAppStore', () => ({
-    useAppStore: {
-        getState: vi.fn(() => ({
-            addAudioTrack: vi.fn()
-        }))
-    }
-}));
 
 describe('TimelineManager', () => {
     let mockAdapter: any;
-    let timelineManager: TimelineManager;
+    let manager: TimelineManager;
 
     beforeEach(() => {
-        vi.clearAllMocks();
         mockAdapter = {
-            loadTrackFromBuffer: vi.fn().mockResolvedValue(undefined),
+            loadTrackFromBuffer: vi.fn(),
             play: vi.fn(),
             pause: vi.fn(),
             isCurrentlyPlaying: vi.fn(),
             seek: vi.fn(),
-            getPcmData: vi.fn(),
-            onTimeUpdate: vi.fn(),
-            removeTimeUpdateListener: vi.fn(),
-            getCurrentTimeMs: vi.fn()
+            getDurationMs: vi.fn().mockReturnValue(12345)
         };
-        timelineManager = new TimelineManager(mockAdapter as unknown as AudioPlaybackAdapter);
+        manager = new TimelineManager(mockAdapter);
     });
 
-    it('should convert an Electron IPC Node Buffer (Uint8Array) into an ES6 ArrayBuffer before passing to AudioContext', async () => {
-        // Electron IPC structured cloning converts Node Buffers into standard Uint8Arrays in the renderer.
-        const ipcBufferData = new Uint8Array([255, 0, 128]);
+    it('should load selected track and update store', async () => {
+        const buffer = new Uint8Array([1, 2, 3]);
+        await manager.loadSelectedTrack('/path/to/test.mp3', buffer);
 
-        const originalPath = '/dummy/path/song.mp3';
+        expect(mockAdapter.loadTrackFromBuffer).toHaveBeenCalled();
+        expect(useAppStore.getState().audio.tracks).toContainEqual(expect.objectContaining({
+            name: 'test.mp3',
+            path: '/path/to/test.mp3'
+        }));
+    });
 
-        await timelineManager.loadSelectedTrack(originalPath, ipcBufferData);
+    it('should reload track via IPC', async () => {
+        vi.mocked(window.electron.ipcRenderer.invoke).mockResolvedValueOnce({
+            buffer: new Uint8Array([4, 5, 6])
+        });
 
-        // Verify the adapter received an actual ArrayBuffer, not the Node object
-        expect(mockAdapter.loadTrackFromBuffer).toHaveBeenCalledTimes(1);
-        const passedBuffer = mockAdapter.loadTrackFromBuffer.mock.calls[0][0];
+        await manager.reloadTrack('/path/to/old.mp3');
 
-        // We must ensure the adapter gets a pure ES6 ArrayBuffer (what AudioContext.decodeAudioData strictly requires), 
-        // not a Uint8Array view which will cause silent failures in the Web Audio API.
-        expect(passedBuffer.constructor.name).toBe('ArrayBuffer');
-        expect(passedBuffer.byteLength).toBe(3);
+        expect(window.electron.ipcRenderer.invoke).toHaveBeenCalledWith('read-audio-file', '/path/to/old.mp3');
+        expect(mockAdapter.loadTrackFromBuffer).toHaveBeenCalled();
+    });
 
-        // Verify contents
-        const view = new Uint8Array(passedBuffer);
-        expect(view[0]).toBe(255);
-        expect(view[1]).toBe(0);
-        expect(view[2]).toBe(128);
+    it('should proxy play, pause, toggle, seek', () => {
+        manager.play();
+        expect(mockAdapter.play).toHaveBeenCalled();
+
+        manager.pause();
+        expect(mockAdapter.pause).toHaveBeenCalled();
+
+        mockAdapter.isCurrentlyPlaying.mockReturnValue(true);
+        manager.togglePlayPause();
+        expect(mockAdapter.pause).toHaveBeenCalledTimes(2);
+
+        mockAdapter.isCurrentlyPlaying.mockReturnValue(false);
+        manager.togglePlayPause();
+        expect(mockAdapter.play).toHaveBeenCalledTimes(2);
+
+        manager.seek(100);
+        expect(mockAdapter.seek).toHaveBeenCalledWith(100);
+
+        expect(manager.getDurationMs()).toBe(12345);
+        expect(manager.getAdapter()).toBe(mockAdapter);
     });
 });

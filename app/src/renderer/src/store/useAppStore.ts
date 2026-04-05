@@ -1,12 +1,17 @@
 import { create } from 'zustand';
-import { AppState, CanvasEntity, VibrationAnim } from './types';
+import { subscribeWithSelector } from 'zustand/middleware';
+import { AppState, CanvasEntity, VibrationAnim, AssetData } from './types';
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()(subscribeWithSelector((set, get) => ({
     // Project Settings
     canvasWidth: 1080,
     canvasHeight: 1080,
     backgroundColor: '#FFFFFF',
     backgroundImageAssetId: null,
+    backgroundImageTransform: { x: 0, y: 0, scale: 1.0 },
+    backgroundEditMode: false,
+    canvasTransform: { x: 0, y: 0, scale: 0.8 },
+    activeLayerId: null,
 
     // Domain Data
     entities: {},
@@ -24,7 +29,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Export State
     exportSettings: {
         resolution: '1080p',
-        fps: 60
+        fps: 60,
+        rangeType: 'whole',
+        startTimeMs: 0,
+        endTimeMs: 5000 // Default 5s if no audio
     },
     isExporting: false,
     exportProgress: 0,
@@ -38,9 +46,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     selectedEntityId: null,
     activeTool: 'Select',
     isDragging: false,
+    isExtracting: false,
+    isSaving: false,
     timelineZoomLevel: 10,
     timelineScrollOffsetPx: 0,
     logs: [],
+
+    // Detached Window State
+    isDetachedMode: new URLSearchParams(window.location.search).get('mode') === 'preview',
+    detachedActive: false,
+    messagePort: null,
 
     // Actions
     updateEntityStyle: (id, styleUpdate) => set((state) => {
@@ -87,8 +102,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
     }),
 
+    addEntities: (newEntities) => set((state) => {
+        const nextEntities = { ...state.entities };
+        const nextEntityIds = [...state.entityIds];
+
+        newEntities.forEach(entity => {
+            if (nextEntities[entity.id]) return;
+
+            const finalEntity = entity.type === 'Line' && !(entity as any).animations
+                ? { ...entity, animations: [] }
+                : entity;
+
+            nextEntities[entity.id] = finalEntity as CanvasEntity;
+            nextEntityIds.push(entity.id);
+        });
+
+        return {
+            entities: nextEntities,
+            entityIds: nextEntityIds
+        };
+    }),
+
     deleteEntity: (id) => set((state) => {
-        if (!state.entities[id]) return state;
+        const entity = state.entities[id];
+        if (!entity) return state;
+
+        // Cleanup ObjectURLs if necessary
+        if (entity.type === 'ImageLayer' && entity.assetId.startsWith('blob:')) {
+            URL.revokeObjectURL(entity.assetId);
+        }
 
         const newEntities = { ...state.entities };
         delete newEntities[id];
@@ -96,13 +138,95 @@ export const useAppStore = create<AppState>((set, get) => ({
         return {
             entities: newEntities,
             entityIds: state.entityIds.filter(eId => eId !== id),
-            selectedEntityId: state.selectedEntityId === id ? null : state.selectedEntityId
+            selectedEntityId: state.selectedEntityId === id ? null : state.selectedEntityId,
+            activeLayerId: state.activeLayerId === id ? null : state.activeLayerId
         };
     }),
 
     setSelectedEntityId: (id) => set({ selectedEntityId: id }),
     setActiveTool: (tool) => set({ activeTool: tool }),
     setIsDragging: (isDragging) => set({ isDragging }),
+    setIsExtracting: (active) => set({ isExtracting: active }),
+    setBackgroundEditMode: (active) => set({ backgroundEditMode: active }),
+    setBackgroundImageTransform: (transform) => set({ backgroundImageTransform: transform }),
+    setCanvasTransform: (transform) => set({ canvasTransform: transform }),
+    
+    updateLayerTransform: (id, transformUpdate) => set((state) => {
+        const entity = state.entities[id];
+        if (!entity || entity.type !== 'ImageLayer') return state;
+
+        return {
+            entities: {
+                ...state.entities,
+                [id]: {
+                    ...entity,
+                    ...transformUpdate
+                }
+            }
+        };
+    }),
+
+    reRasterizeOSMLayer: async (id, newZoomScale, viewportBounds) => {
+        const state = get();
+        const entity = state.entities[id];
+        if (!entity || entity.type !== 'ImageLayer' || !entity.cacheKey) return;
+
+        try {
+            // Request vector data from IPC based on cacheKey
+            const geoJSON = await (window as any).electron.ipcRenderer.invoke('get-osm-cache', entity.cacheKey);
+            if (!geoJSON) throw new Error('Failed to retrieve OSM cache data');
+
+            // Dynamic import to avoid circular dependency if osmImporter uses store
+            const { rasterizeOSMLayers } = await import('../utils/osmImporter');
+            
+            const results = await rasterizeOSMLayers(
+                geoJSON,
+                state.canvasWidth,
+                state.canvasHeight,
+                newZoomScale,
+                viewportBounds
+            );
+
+            // For now, we assume the layer represents a specific category or the whole set
+            // In a better impl, we might update multiple layers. 
+            // Here we assume this id's asset is what needs updating.
+            const buffers = Object.values(results);
+            if (buffers.length > 0) {
+                const buffer = buffers[0] as Uint8Array;
+                const newAssetId = `osm_${entity.cacheKey || 'patch'}_${Date.now()}`;
+
+                set((state) => ({
+                    assets: {
+                        ...state.assets,
+                        images: {
+                            ...state.assets.images,
+                            [newAssetId]: {
+                                id: newAssetId,
+                                path: '',
+                                buffer: buffer
+                            } as AssetData
+                        }
+                    },
+                    entities: {
+                        ...state.entities,
+                        [id]: {
+                            ...entity,
+                            assetId: newAssetId,
+                            rasterizedZoomLevel: newZoomScale
+                        } as any
+                    }
+                }));
+
+                // Garbage collect old blob if it was a blob URL (though now we use buffer-backed assets)
+                if (entity.assetId.startsWith('blob:')) {
+                    URL.revokeObjectURL(entity.assetId);
+                }
+            }
+        } catch (e) {
+            console.error('reRasterizeOSMLayer failed:', e);
+            state.addLog('error', `Failed to re-rasterize OSM layer: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    },
 
     // Z-Order Actions
     bringForward: (id) => set((state) => {
@@ -217,6 +341,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Project Actions
     setBackgroundColor: (color) => set({ backgroundColor: color }),
     setBackgroundImage: (assetId) => set({ backgroundImageAssetId: assetId }),
+    setCanvasSize: (width, height) => set({ canvasWidth: width, canvasHeight: height }),
 
     // Asset Actions
     addImageAsset: (asset) => set((state) => ({
@@ -385,40 +510,52 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     saveProject: async () => {
         const state = get();
-        const projectData = {
-            canvasWidth: state.canvasWidth,
-            canvasHeight: state.canvasHeight,
-            backgroundColor: state.backgroundColor,
-            backgroundImageAssetId: state.backgroundImageAssetId,
-            entities: state.entities,
-            entityIds: state.entityIds,
-            audio: state.audio,
-            assets: state.assets,
-            exportSettings: state.exportSettings
-        };
-        
-        const jsonString = JSON.stringify(projectData, null, 2);
-        const success = await (window as any).electron.ipcRenderer.invoke('save-project', jsonString);
-        
-        if (success) {
-            state.addLog('info', 'Project saved successfully.');
+        set({ isSaving: true });
+        try {
+            const projectData = {
+                canvasWidth: state.canvasWidth,
+                canvasHeight: state.canvasHeight,
+                backgroundColor: state.backgroundColor,
+                backgroundImageAssetId: state.backgroundImageAssetId,
+                backgroundImageTransform: state.backgroundImageTransform,
+                entities: state.entities,
+                entityIds: state.entityIds,
+                audio: state.audio,
+                assets: state.assets,
+                exportSettings: state.exportSettings
+            };
+            
+            // Pass the object directly. Electron IPC handles TypedArrays efficiently 
+            // via structured cloning, avoiding the massive overhead of JSON stringification.
+            const success = await (window as any).electron.ipcRenderer.invoke('save-project', projectData);
+            
+            if (success) {
+                state.addLog('info', 'Project saved successfully.');
+            } else {
+                state.addLog('warn', 'Project save was cancelled or failed.');
+            }
+            set({ isSaving: false });
+            return success;
+        } catch (e) {
+            console.error('saveProject failed:', e);
+            state.addLog('error', `Failed to save project: ${e instanceof Error ? e.message : String(e)}`);
+            set({ isSaving: false });
+            return false;
         }
-        return success;
     },
 
     loadProject: async () => {
-        const jsonString = await (window as any).electron.ipcRenderer.invoke('load-project');
-        if (jsonString) {
-            try {
-                const projectData = JSON.parse(jsonString);
-                
-                // DATA REWIRING: JSON.parse turns Uint8Array into plain objects. 
-                // We must restore them so the CanvasEngine/Blob logic works.
+        const state = get();
+        try {
+            const projectData = await (window as any).electron.ipcRenderer.invoke('load-project');
+            if (projectData) {
+                // DATA REWIRING: structured clone preserves Uint8Array, but let's be safe
                 if (projectData.assets && projectData.assets.images) {
                     for (const id in projectData.assets.images) {
                         const asset = projectData.assets.images[id];
                         if (asset.buffer && !(asset.buffer instanceof Uint8Array)) {
-                            // Convert the plain object {0: 123, 1: 45...} back to Uint8Array
+                            // Convert the plain object {0: 123, 1: 45...} back to Uint8Array 
+                            // (Only needed if the main process still stringifies somewhere)
                             asset.buffer = new Uint8Array(Object.values(asset.buffer));
                         }
                     }
@@ -433,18 +570,71 @@ export const useAppStore = create<AppState>((set, get) => ({
                     logs: []
                 });
 
-                get().addLog('info', 'Project loaded successfully. Synchronizing engines...');
+                state.addLog('info', 'Project loaded successfully. Synchronizing engines...');
                 
                 // Notify App.tsx to reload audio buffers
                 window.dispatchEvent(new CustomEvent('project-loaded'));
                 
                 return true;
-            } catch (e) {
-                console.error('Failed to parse project file', e);
-                get().addLog('error', `Failed to load project: ${e instanceof Error ? e.message : String(e)}`);
-                return false;
             }
+        } catch (e) {
+            console.error('Failed to load project:', e);
+            state.addLog('error', `Failed to load project: ${e instanceof Error ? e.message : String(e)}`);
+            return false;
         }
         return false;
+    },
+
+    // Detached Window Actions
+    setDetachedActive: (active) => set({ detachedActive: active }),
+    setMessagePort: (port) => {
+        console.log(`[STORE] setMessagePort called. Port:`, port);
+        set({ messagePort: port });
+        if (port) {
+            port.onmessage = (event) => {
+                const { type, payload } = event.data;
+                if (type !== 'SYNC_TIME') { // Too noisy to log time syncs
+                    console.log(`[STORE] Received Port Message: ${type}`, typeof payload === 'object' ? Object.keys(payload) : '');
+                }
+                if (type === 'SYNC_STATE') {
+                    get().applySyncPatch(payload);
+                } else if (type === 'SYNC_TIME') {
+                    window.dispatchEvent(new CustomEvent('sync-time', { detail: payload }));
+                } else if (type === 'DETACHED_PLUCK') {
+                    window.dispatchEvent(new CustomEvent('detached-pluck', { detail: payload }));
+                } else if (type === 'REQUEST_INITIAL_SYNC') {
+                    console.log(`[STORE] Main Window received REQUEST_INITIAL_SYNC. Dispatching full state payload.`);
+                    get().syncStateToPreview();
+                }
+            };
+        }
+    },
+    syncStateToPreview: (patch) => {
+        const state = get();
+        if (!state.detachedActive || !state.messagePort) return;
+
+        // If no patch provided, send full snapshot (initial sync)
+        const payload = patch || {
+            entities: state.entities,
+            entityIds: state.entityIds,
+            audio: state.audio,
+            assets: state.assets,
+            canvasWidth: state.canvasWidth,
+            canvasHeight: state.canvasHeight,
+            backgroundColor: state.backgroundColor,
+            backgroundImageTransform: state.backgroundImageTransform
+        };
+
+        state.messagePort.postMessage({ type: 'SYNC_STATE', payload });
+    },
+    applySyncPatch: (patch) => {
+        // Simple implementation: overwrite state with patch
+        // In a real differential sync, this would use immer's applyPatches
+        set((state) => ({ ...state, ...patch }));
     }
-}));
+})));
+
+// Expose to window for debugging
+if (typeof window !== 'undefined') {
+    (window as any).appStore = useAppStore;
+}

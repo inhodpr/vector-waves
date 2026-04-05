@@ -14,6 +14,18 @@ export class DrawToolHandler implements IToolHandler {
             this.currentShapeId = id;
 
             // Start shape with 2 identical points. First is committed, second follows the mouse.
+            const state = useAppStore.getState();
+            const markers = state.audio.markers;
+            const defaultAnim = markers.length > 0 ? [{
+                id: `anim_${Date.now()}`,
+                startMarkerId: markers[0].id,
+                frequency: Number((0.9 + Math.random() * 1.0).toFixed(2)),
+                amplitude: Math.round(8 + Math.random() * 7),
+                edgeDamping: 20,
+                durationMs: 1000,
+                easing: 'Exponential' as const
+            }] : [];
+
             useAppStore.getState().addEntity({
                 id,
                 type: 'Line',
@@ -26,7 +38,7 @@ export class DrawToolHandler implements IToolHandler {
                 },
                 pluckOrigin: 0.5,
                 zIndex: state.entityIds.length,
-                animations: []
+                animations: defaultAnim
             });
             useAppStore.getState().setSelectedEntityId(id);
         } else {

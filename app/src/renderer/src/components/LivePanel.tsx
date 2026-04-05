@@ -24,68 +24,77 @@ export const LivePanel: React.FC<LivePanelProps> = ({ adapter }) => {
     }, []);
 
     useEffect(() => {
-        let interval: any;
         if (liveMode) {
-            adapter.start(audioInputDeviceId || undefined);
-            interval = setInterval(() => {
-                const vol = adapter.getVolume();
-                setVolume(vol);
+            adapter.start(audioInputDeviceId || undefined).then(() => {
+                // Initial sync of triggers
+                syncTriggers();
+            });
 
-                // Check triggers for all entities
+            // Listen for peak events from the worklet (SAB ring buffer)
+            const handlePeak = (event: { slotId: string, intensity: number, timestampMs: number }) => {
                 const state = useAppStore.getState();
-                const nowMs = adapter.getCurrentTimeMs();
+                const entity = state.entities[event.slotId.split('-')[0]]; // slotId is format `${entityId}-${animId}`
+                const animId = event.slotId.split('-')[1];
 
-                Object.values(state.entities).forEach(entity => {
-                    if (entity.type === 'Line' && entity.animations) {
-                        entity.animations.forEach(anim => {
-                            if (anim.trigger?.type === 'Reactive') {
-                                const threshold = anim.trigger.threshold || 50;
-                                const band = anim.trigger.frequencyBand || 'Full';
-                                
-                                let currentVal = 0;
-                                if (band === 'Full') currentVal = vol;
-                                else if (band === 'Bass') currentVal = adapter.getBandVolume(20, 250);
-                                else if (band === 'Mid') currentVal = adapter.getBandVolume(250, 4000);
-                                else if (band === 'Treble') currentVal = adapter.getBandVolume(4000, 20000);
-
-                                const triggers = anim.activeTriggers || [];
-                                // Clean up old triggers
-                                const activeTriggers = triggers.filter(t => nowMs - t.timestampMs < 2000);
-                                
-                                if (currentVal > threshold) {
-                                    const lastTrigger = activeTriggers.length > 0 
-                                        ? activeTriggers[activeTriggers.length - 1].timestampMs 
-                                        : 0;
-
-                                    // Faster refractory period for multi-wave density
-                                    if (nowMs - lastTrigger > 100) {
-                                        updateVibrationAnim(entity.id, anim.id, {
-                                            activeTriggers: [
-                                                ...activeTriggers,
-                                                { timestampMs: nowMs, intensity: currentVal / 255 }
-                                            ]
-                                        });
-                                    } else if (activeTriggers.length !== triggers.length) {
-                                        // Still update if we just cleaned up, even if we didn't add a new one
-                                        updateVibrationAnim(entity.id, anim.id, { activeTriggers });
-                                    }
-                                } else if (activeTriggers.length !== triggers.length) {
-                                    // Just cleanup
-                                    updateVibrationAnim(entity.id, anim.id, { activeTriggers });
-                                }
-                            }
+                if (entity && entity.type === 'Line' && entity.animations) {
+                    const anim = entity.animations.find(a => a.id === animId);
+                    if (anim) {
+                        const triggers = anim.activeTriggers || [];
+                        const activeTriggers = triggers.filter(t => event.timestampMs - t.timestampMs < 2000);
+                        
+                        updateVibrationAnim(entity.id, anim.id, {
+                            activeTriggers: [
+                                ...activeTriggers,
+                                { timestampMs: event.timestampMs, intensity: event.intensity }
+                            ]
                         });
                     }
-                });
-            }, 50); // 20fps for trigger checks is enough
+                }
+            };
+
+            adapter.onPeakDetected(handlePeak);
+
+            // Level monitoring for the UI bar (using legacy analyzer for smooth visual)
+            const interval = setInterval(() => {
+                setVolume(adapter.getVolume());
+            }, 50);
+
+            return () => {
+                clearInterval(interval);
+                adapter.stop();
+            };
         } else {
             adapter.stop();
             setVolume(0);
         }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
+        return undefined;
     }, [liveMode, audioInputDeviceId]);
+
+    // Sync triggers whenever entities change
+    useEffect(() => {
+        if (liveMode) {
+            syncTriggers();
+        }
+    }, [entities, liveMode]);
+
+    const syncTriggers = () => {
+        const configs: any[] = [];
+        Object.values(entities).forEach(entity => {
+            if (entity.type === 'Line' && entity.animations) {
+                entity.animations.forEach(anim => {
+                    if (anim.trigger?.type === 'Reactive') {
+                        configs.push({
+                            id: `${entity.id}-${anim.id}`,
+                            band: anim.trigger.frequencyBand || 'Full',
+                            threshold: anim.trigger.threshold || 50,
+                            refractory: 30 // Hard-coded lower refractory for now, or use a setting
+                        });
+                    }
+                });
+            }
+        });
+        adapter.updateTriggers(configs);
+    };
 
     return (
         <div style={{ padding: '16px', background: '#f0f0f0', borderBottom: '1px solid #ccc' }}>

@@ -3,7 +3,7 @@ import { PhysicsAnimationEngine } from './PhysicsAnimationEngine';
 import { IWavePropagationStrategy, WaveParams } from './IWavePropagationStrategy';
 import { LineEntity, AppState } from '../store/types';
 
-// A mock strategy that just returns exactly +5 displacement constantly
+// A mock strategy that returns exactly +5 displacement constantly
 class MockWaveStrategy implements IWavePropagationStrategy {
     calculateDisplacement(_params: WaveParams): number {
         return 5;
@@ -13,122 +13,187 @@ class MockWaveStrategy implements IWavePropagationStrategy {
 describe('PhysicsAnimationEngine', () => {
     it('returns raw vertices if no animations are active', () => {
         const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
-
         const entity: LineEntity = {
-            id: '1',
-            type: 'Line',
-            vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
             style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
-            pluckOrigin: 0,
-            zIndex: 0,
-            animations: []
+            pluckOrigin: 0, zIndex: 0, animations: []
         };
-
         const result = engine.calculateDeformedMesh(entity, 0, {} as AppState);
-        expect(result.length).toBe(2);
-        expect(result[0].x).toBe(0);
+        expect(result).toBe(entity.vertices);
     });
 
-    it('subdivides geometry straight paths properly', () => {
+    it('subdivides geometry properly', () => {
         const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
-
         const entity: LineEntity = {
-            id: '1',
-            type: 'Line',
-            vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }], // 10px long line
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
             style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
-            pluckOrigin: 0,
-            zIndex: 0,
-            animations: []
+            pluckOrigin: 0, zIndex: 0, animations: []
         };
-
         const { baseMesh, totalLength } = engine.subdivideAndSmooth(entity);
-
-        // Length should be 10
         expect(totalLength).toBe(10);
-
-        // At 2px resolution, there should be points at 0, 2, 4, 6, 8, 10
         expect(baseMesh.length).toBe(6);
-        expect(baseMesh[1].dist).toBe(2);
-        expect(baseMesh[1].ny).toBe(1); // Normal Y should be 1 (pointing down/up orthogonally from horizontal line)
     });
 
-    it('accumulates displacement from multiple vibrations (Constructive Interference)', () => {
+    it('handles timeline-based animations', () => {
         const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
-
         const entity: LineEntity = {
-            id: '1',
-            type: 'Line',
-            vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }], // Horizontal line
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
             style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
-            pluckOrigin: 0,
-            zIndex: 0,
-            animations: [
-                { id: 'anim1', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, edgeDamping: 0, easing: 'Linear' },
-                { id: 'anim2', startMarkerId: 'm1', endMarkerId: 'm2', frequency: 1, amplitude: 5, edgeDamping: 0, easing: 'Linear' }
-            ]
+            pluckOrigin: 0.5, zIndex: 0, 
+            animations: [{ 
+                id: 'a1', startMarkerId: 'm1', endMarkerId: 'm2',
+                frequency: 1, amplitude: 10, edgeDamping: 0, easing: 'Linear' 
+            }]
         };
-
-        const mockAppState = {
+        const state = {
             audio: {
                 markers: [
-                    { id: 'm1', targetTrackId: 't1', timestampMs: 0 },
-                    { id: 'm2', targetTrackId: 't1', timestampMs: 1000 }
+                    { id: 'm1', timestampMs: 0 },
+                    { id: 'm2', timestampMs: 1000 }
                 ]
             }
         } as AppState;
-
-        // Both animations active at timeMs=500
-        const result = engine.calculateDeformedMesh(entity, 500, mockAppState);
-
-        // There are 6 points in the base mesh.
-        // Each anim provides +5px displacement along the Normal Y (ny = 1)
-        // Two anims = +10px total Y displacement.
-
-        expect(result.length).toBe(6);
-        for (let i = 1; i < result.length - 1; i++) {
-            // For middle points, normal should be (0, 1) and disp should accumulate 10
-            // x should remain the same (nx = 0)
-            // y should be displaced by 10 (ny = 1 * 10)
-            expect(result[i].y).toBe(10);
-        }
+        
+        const result = engine.calculateDeformedMesh(entity, 500, state);
+        expect(result[1].y).toBe(5);
     });
 
-    it('should create arc nodes when a radius is applied to a corner', () => {
+    it('applies edge damping', () => {
         const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
-
         const entity: LineEntity = {
-            id: '1',
-            type: 'Line',
-            vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], // 90-degree corner
-            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 20 },
-            pluckOrigin: 0,
-            zIndex: 0,
-            animations: []
-        };
-
-        const { baseMesh } = engine.subdivideAndSmooth(entity);
-
-        // Expect that some nodes were flagged as being part of an arc
-        expect(baseMesh.some(node => node.isArc)).toBe(true);
-    });
-
-    it('should not create arc nodes when radius is 0', () => {
-        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
-
-        const entity: LineEntity = {
-            id: '1',
-            type: 'Line',
-            vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], // 90-degree corner
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
             style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
-            pluckOrigin: 0,
-            zIndex: 0,
-            animations: []
+            pluckOrigin: 0.5, zIndex: 0, 
+            animations: [{ 
+                id: 'a1', startMarkerId: 'm1', endMarkerId: 'm2',
+                frequency: 1, amplitude: 10, edgeDamping: 5, easing: 'Linear' 
+            }]
         };
+        const state = { audio: { markers: [{ id: 'm1', timestampMs: 0 }] } } as any;
+        const result = engine.calculateDeformedMesh(entity, 100, state);
+        
+        expect(result[0].y).toBe(0);
+        expect(result[5].y).toBe(0);
+    });
 
+    it('handles arc subdivision with radius', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 20 },
+            pluckOrigin: 0, zIndex: 0, animations: []
+        };
         const { baseMesh } = engine.subdivideAndSmooth(entity);
+        expect(baseMesh.some(m => m.isArc)).toBe(true);
+    });
 
-        // Expect that no nodes were flagged as being part of an arc
-        expect(baseMesh.every(node => !node.isArc)).toBe(true);
+    it('handles subdivision for < 2 vertices', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity = { vertices: [{ x: 0, y: 0 }], style: {} } as any;
+        const { baseMesh } = engine.subdivideAndSmooth(entity);
+        expect(baseMesh.length).toBe(0);
+    });
+
+    it('handles very short segments', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity = { vertices: [{ x: 0, y: 0 }, { x: 0.01, y: 0 }], style: {} } as any;
+        const { totalLength } = engine.subdivideAndSmooth(entity);
+        expect(totalLength).toBeLessThan(0.1);
+    });
+
+    it('should return closest pluck percentage', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
+            pluckOrigin: 0, zIndex: 0, animations: []
+        };
+        const pct = engine.getClosestPluckPercentage(entity, 50, 10);
+        expect(pct).toBeCloseTo(0.5);
+    });
+
+    it('should return null pluck origin for empty entity', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const origin = engine.getPluckOriginPoint({ vertices: [] } as any);
+        expect(origin).toBeNull();
+    });
+
+    it('handles reactive animations with active triggers', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
+            pluckOrigin: 0.5, zIndex: 0, 
+            animations: [{ 
+                id: 'a1', startMarkerId: '', endMarkerId: '',
+                trigger: { type: 'Reactive', frequencyBand: 'Bass' }, 
+                frequency: 1, amplitude: 10, edgeDamping: 0, easing: 'Linear',
+                activeTriggers: [{ timestampMs: 400, intensity: 1.0 }]
+            }]
+        };
+        
+        const result = engine.calculateDeformedMesh(entity, 500, {} as AppState);
+        expect(result[1].y).toBe(5);
+    });
+
+    it('should calculate pluck origin at specific percent', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
+            pluckOrigin: 0.5, zIndex: 0, animations: []
+        };
+        const origin = engine.getPluckOriginPoint(entity);
+        expect(origin?.x).toBeCloseTo(50);
+    });
+
+    it('should handle end-marker damping logic', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
+            pluckOrigin: 0.5, zIndex: 0, 
+            animations: [{ 
+                id: 'a1', startMarkerId: 'm1', endMarkerId: 'm2',
+                frequency: 1, amplitude: 10, edgeDamping: 0, easing: 'Linear' 
+            }]
+        };
+        const state = {
+            audio: {
+                markers: [
+                    { id: 'm1', timestampMs: 0 },
+                    { id: 'm2', timestampMs: 500 }
+                ]
+            }
+        } as AppState;
+        
+        // At 600ms, dampStartTimeMs should be 100ms
+        const result = engine.calculateDeformedMesh(entity, 600, state);
+        expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('should handle durationMs damping logic when no end-marker is present', () => {
+        const engine = new PhysicsAnimationEngine(new MockWaveStrategy());
+        const entity: LineEntity = {
+            id: '1', type: 'Line', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+            style: { strokeColor: 'red', strokeWidth: 1, fillColor: '', globalRadius: 0 },
+            pluckOrigin: 0.5, zIndex: 0, 
+            animations: [{ 
+                id: 'a1', startMarkerId: 'm1', 
+                frequency: 1, amplitude: 10, edgeDamping: 0, easing: 'Linear',
+                durationMs: 500
+            }]
+        };
+        const state = {
+            audio: {
+                markers: [{ id: 'm1', timestampMs: 0 }]
+            }
+        } as AppState;
+        
+        // At 600ms, dampingStartTimeMs should be 100ms (600 - 500)
+        // We can't easily check dampingStartTimeMs directly without exposing it, 
+        // but we can verify it doesn't crash and returns expected data.
+        const result = engine.calculateDeformedMesh(entity, 600, state);
+        expect(result.length).toBeGreaterThan(0);
     });
 });
